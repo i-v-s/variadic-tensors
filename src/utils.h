@@ -1,6 +1,7 @@
 #ifndef VT_UTILS_H
 #define VT_UTILS_H
 #include <tuple>
+#include <concepts>
 
 namespace vt {
 
@@ -57,7 +58,8 @@ auto pushFront(Item && item, Tuple && tuple) noexcept {
     return tuple_cat(make_tuple(forward<Item>(item)), forward<Tuple>(tuple));
 }
 
-/************* tupleSlice *************/
+
+/************* gather *************/
 
 /// Gather from tuple by sequence of indices
 template<typename Tuple, std::size_t... I>
@@ -80,6 +82,9 @@ constexpr auto gather(std::index_sequence<I...>, const Tuples& ... a) noexcept
     using namespace std;
     return make_tuple(gather<I>(a...)...);
 }
+
+
+/************* tupleSlice *************/
 
 template <std::size_t offset, std::size_t ... indices>
 std::index_sequence<(offset + indices)...> addOffset(std::index_sequence<indices...>)
@@ -122,6 +127,35 @@ auto zip(const Tuple &arg, const Tuples&... args)
     return gather(make_index_sequence<size>{}, arg, args...);
 }
 
+
+/************* true seq *************/
+
+template<typename a, typename b> struct SeqCatT;
+
+template<std::size_t... a, std::size_t... b>
+struct SeqCatT<std::index_sequence<a...>, std::index_sequence<b...>>
+{
+    using Type = std::index_sequence<a..., b...>;
+};
+
+template<typename a, typename b>
+using SeqCat = typename SeqCatT<a, b>::Type;
+
+template<std::size_t i, bool... bs>
+struct TrueSeqT;
+
+template<std::size_t i, bool b, bool... bs>
+struct TrueSeqT<i, b, bs...>
+{
+    using NextType = typename TrueSeqT<i + 1, bs...>::Type;
+    using Type = std::conditional_t<b, SeqCat<std::index_sequence<i>, NextType>, NextType>;
+};
+
+template<std::size_t i>
+struct TrueSeqT<i> {using Type = std::index_sequence<>;};
+
+template<bool... bs>
+using TrueSeq = typename TrueSeqT<0, bs...>::Type;
 
 }
 
