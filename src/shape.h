@@ -1,6 +1,8 @@
 #ifndef SHAPE_H
 #define SHAPE_H
 #include <concepts>
+#include <tuple>
+#include <utility>
 
 namespace vt {
 
@@ -15,7 +17,7 @@ struct Shape: public Tuple_
     Shape(Tuple && v) : Tuple(std::forward<Tuple>(v))
     {
     }
-    static constexpr size_t size() noexcept
+    static constexpr std::size_t size() noexcept
     {
         return std::tuple_size_v<Tuple>;
     }
@@ -31,13 +33,13 @@ struct Shape: public Tuple_
     {
         return shapeTail(*this);
     }
-    size_t total() const noexcept
+    std::size_t total() const noexcept
     {
         return apply([] (auto... args) { return (args * ...); });
     }
 };
 
-template<typename Axis, typename... Axes>
+/*template<typename Axis, typename... Axes>
 Shape<Axes...> shapeTail(Shape<Axis, Axes...> const &shape)
 {
     return std::apply([] (auto arg, auto... args) {
@@ -46,7 +48,7 @@ Shape<Axes...> shapeTail(Shape<Axis, Axes...> const &shape)
         else
             return Shape<Axes...>(arg, args...);
     }, static_cast<std::tuple<typename Axis::Size, typename Axes::Type...>>(shape));
-}
+}*/
 
 }
 #endif // SHAPE_H

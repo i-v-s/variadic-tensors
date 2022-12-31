@@ -1,5 +1,6 @@
 #ifndef VT_UTILS_H
 #define VT_UTILS_H
+#include <tuple>
 
 namespace vt {
 
@@ -11,7 +12,7 @@ template<typename... Tuples> struct TupleCatT;
 template<typename... Args1, typename... Args2, typename... Tuples>
 struct TupleCatT<std::tuple<Args1...>, std::tuple<Args2...>, Tuples...>
 {
-    using Type = TupleCatT<std::tuple<Args1..., Args2...>, Tuples...>::Type;
+    using Type = typename TupleCatT<std::tuple<Args1..., Args2...>, Tuples...>::Type;
 };
 
 template<typename Tuple> struct TupleCatT<Tuple> { using Type = Tuple; };

@@ -1,6 +1,7 @@
 #ifndef AXIS_H
 #define AXIS_H
 #include <sstream>
+#include <limits>
 
 namespace vt {
 
@@ -46,7 +47,7 @@ template<int ID, int SIZE, int STRIDE>
 struct RemoveStrideT<Axis<ID, SIZE, STRIDE>> { using Type = Axis<ID, SIZE>; };
 
 template<AxisLike Axis>
-using RemoveStride = RemoveStrideT<Axis>::Type;
+using RemoveStride = typename RemoveStrideT<Axis>::Type;
 
 }
 #endif // AXIS_H

@@ -1,5 +1,5 @@
-#ifndef COMMON_TENSOR_H
-#define COMMON_TENSOR_H
+#ifndef VT_CORE_H
+#define VT_CORE_H
 #include <concepts>
 #include <memory>
 #include <atomic>
@@ -9,13 +9,13 @@
 #include <utility>
 #include <numeric>
 #include <type_traits>
-#include <limits>
 #include <sstream>
 #include <assert.h>
 
 #include "./axis.h"
 #include "./shape.h"
 #include "./utils.h"
+#include "./strides.h"
 
 template<typename Arg, typename... Args>
 std::ostream& operator<<(std::ostream &stream, const std::tuple<Arg, Args...> &t) noexcept
@@ -30,105 +30,6 @@ std::ostream& operator<<(std::ostream &stream, const std::tuple<Arg, Args...> &t
 }
 
 namespace vt {
-
-
-/************* Strides *************/
-
-template<typename T>
-concept Integer = std::convertible_to<T, int>;
-
-template<Integer A, Integer B> struct ProductT {
-    using Result = int;
-};
-
-template<int a, int b>
-struct ProductT<std::integral_constant<int, a>, std::integral_constant<int, b>> {
-    using Result = std::integral_constant<int, a * b>;
-};
-
-template<Integer A, Integer B>
-using Product = ProductT<A, B>::Result;
-
-template<AxisLike... Axes>
-struct ShapeStridesTuple;
-
-template<AxisLike Axis, AxisLike... Axes>
-struct ShapeStridesTuple<Axis, Axes...>
-{
-    using Prev = ShapeStridesTuple<Axes...>;
-    using PrevSize = Prev::Size;
-    using Stride = std::conditional_t<Axis::contiguous, PrevSize, typename Axis::Stride>;
-    using Size = Product<typename Axis::Size, Stride>;
-    using Strides = PushFront<Stride, typename Prev::Strides>;
-    using Shape = PushFront<typename Axis::Size, typename Prev::Shape>;
-    using Pair = std::pair<Shape, Strides>;
-
-    template<bool dynamic, Integer... Args>
-    static Shape buildShape(Size size, Args... args) noexcept;
-
-    template<Integer... Args>
-    static Shape buildShape(Args... args) noexcept
-    {
-        using namespace std;
-        if constexpr (Axis::dynamic)
-                return apply([] (auto size, auto... args) {
-                    return pushFront(size, Prev::buildShape(args...));
-                }, forward_as_tuple(args...));
-        else
-            return pushFront(Size{}, Prev::buildShape(args...));
-    }
-
-    template<Integer... Args>
-    static Strides buildStrides(const Shape &shape, Args... args) noexcept
-    {
-        using namespace std;
-        if constexpr (integral<Stride>) {
-            if constexpr(Axis::contiguous) {
-                auto strides = Prev::buildStrides(tupleTail(shape), args...);
-                int prevStride = tuple_size_v<decltype(strides)> ? get<0>(strides) : 1;
-                int prevSize = tuple_size_v<decltype(strides)> ? get<1>(shape) : 1;
-                return pushFront(prevStride * prevSize, strides);
-            } else
-                return apply([&shape] (auto stride, auto... args) {
-                    return pushFront(stride, Prev::buildStrides(tupleTail(shape), args...));
-                }, forward_as_tuple(args...));
-        } else
-            return pushFront(Stride{}, Prev::buildStrides(tupleTail(shape), args...));
-    }
-
-    template<Integer... Args>
-    static std::pair<Shape, Strides> build(Args... args) noexcept
-    {
-        using namespace std;
-        auto at = make_tuple(args...);
-        constexpr int sizeCount = ((Axes::dynamic ? 1 : 0) + ...) + (Axis::dynamic ? 1 : 0);
-        static_assert(sizeCount <= sizeof...(args), "Not enough arguments provided");
-        Shape shape = apply([] (auto... args) {
-            return buildShape(args...);
-        }, tupleSlice<0, sizeCount>(at));
-        Strides strides = apply([&shape] (auto... args) {
-            return buildStrides(shape, args...);
-        }, tupleSlice<sizeCount>(at));
-        return std::make_pair(shape, strides);
-    }
-};
-
-template<> struct ShapeStridesTuple<>
-{
-    using Size = std::integral_constant<int, 1>;
-    using Strides = std::tuple<>;
-    using Shape = std::tuple<>;
-
-    static constexpr Shape buildShape() noexcept { return Shape{}; }
-    static constexpr Strides buildStrides(const Shape&) noexcept { return Strides{}; }
-};
-
-template<AxisLike... Axes, std::integral... Args>
-auto buildShapeStrides(Args... args)
-{
-    return ShapeStridesTuple<Axes...>::build(args...);
-}
-
 
 /************* Buffers *************/
 
@@ -212,10 +113,10 @@ template<typename Pointer>
 struct ItemTypeT<Pointer, typename std::enable_if_t<std::is_pointer_v<Pointer>>> { using Type = std::remove_pointer_t<Pointer>; };
 
 template<typename Pointer>
-struct ItemTypeT<Pointer, typename std::enable_if_t<!std::is_pointer_v<Pointer>>> { using Type = Pointer::Item; };
+struct ItemTypeT<Pointer, typename std::enable_if_t<!std::is_pointer_v<Pointer>>> { using Type = typename Pointer::Item; };
 
 template<typename Pointer>
-using ItemType = ItemTypeT<Pointer>::Type;
+using ItemType = typename ItemTypeT<Pointer>::Type;
 
 
 /************* Tensors *************/
@@ -232,7 +133,7 @@ public:
     using SST = ShapeStridesTuple<Axes...>;
     using Item = ItemType<Pointer>;
     using ShapeType = Shape<typename SST::Shape>;
-    using StridesType = SST::Strides;
+    using StridesType = typename SST::Strides;
 
     Tensor(Pointer pointer, const ShapeType &shape) :
         shape(shape),
@@ -273,7 +174,7 @@ public:
     const StridesType strides;
 protected:
 
-    Tensor(Pointer pointer, SST::Pair && sst) :
+    Tensor(Pointer pointer, typename SST::Pair && sst) :
         shape(sst.first),
         strides(sst.second),
         pointer(pointer)
@@ -309,7 +210,7 @@ public:
         Parent(Pointer(Parent::bufferSize(args...)), args...)
     {}
 
-    AllocatedTensor(const Parent::ShapeType &shape) :
+    AllocatedTensor(const typename Parent::ShapeType &shape) :
         Parent(Pointer(Parent::bufferSize(shape)), shape)
     {}
 };
@@ -319,4 +220,4 @@ using HeapTensor = AllocatedTensor<HeapBuffer, Item, Args...>;
 
 }
 
-#endif // COMMON_TENSOR_H
+#endif // VT_CORE_H

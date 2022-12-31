@@ -8,7 +8,7 @@ class PinnedBuffer: public Buffer<PinnedBuffer>
 {
 public:
     using Parent = Buffer<PinnedBuffer>;
-    // using Parent::Parent;
+    using Parent::Parent;
 protected:
     static void *malloc(size_t size);
     static void dealloc(void *ptr);

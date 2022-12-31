@@ -16,6 +16,7 @@ target_sources(${PROJECT_NAME} PRIVATE
     src/axis.h
     src/utils.h
     src/shape.h
+    src/strides.h
     src/core.h
     src/cuda.h   src/cuda.cpp
 )
