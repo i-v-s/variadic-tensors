@@ -4,6 +4,30 @@
 
 namespace vt {
 
+/************* Types *************/
+
+
+template<typename T>
+concept Integer = std::convertible_to<T, int>;
+
+template<int value>
+using Const = std::integral_constant<int, value>;
+
+
+/************* Product *************/
+
+template<Integer A, Integer B> struct ProductT {
+    using Result = int;
+};
+
+template<int a, int b>
+struct ProductT<std::integral_constant<int, a>, std::integral_constant<int, b>> {
+    using Result = std::integral_constant<int, a * b>;
+};
+
+template<Integer A, Integer B>
+using Product = typename ProductT<A, B>::Result;
+
 
 /************* TupleCat *************/
 
@@ -35,10 +59,26 @@ auto pushFront(Item && item, Tuple && tuple) noexcept {
 
 /************* tupleSlice *************/
 
+/// Gather from tuple by sequence of indices
 template<typename Tuple, std::size_t... I>
 constexpr auto gather(const Tuple& a, std::index_sequence<I...>) noexcept
 {
     return std::make_tuple(std::get<I>(a)...);
+}
+
+/// Gather from many tuples by one index
+template<std::size_t I, typename... Tuples>
+constexpr auto gather(const Tuples& ... a) noexcept
+{
+    return std::make_tuple(std::get<I>(a)...);
+}
+
+/// Gather from many tuples by sequence of indices
+template<std::size_t... I, typename... Tuples>
+constexpr auto gather(std::index_sequence<I...>, const Tuples& ... a) noexcept
+{
+    using namespace std;
+    return make_tuple(gather<I>(a...)...);
 }
 
 template <std::size_t offset, std::size_t ... indices>
@@ -69,6 +109,19 @@ constexpr auto tupleToArray(const std::tuple<Args...> &t)
 {
     return std::apply([] (auto... args) { return std::array<int, sizeof...(args)>{static_cast<int>(args)...}; }, t);
 }
+
+
+/************* zip *************/
+
+template<typename Tuple, typename... Tuples>
+auto zip(const Tuple &arg, const Tuples&... args)
+{
+    using namespace std;
+    constexpr auto size = tuple_size_v<Tuple>;
+    static_assert(((size == tuple_size_v<Tuples>) && ...), "Tuples must be the same size");
+    return gather(make_index_sequence<size>{}, arg, args...);
+}
+
 
 }
 

@@ -119,6 +119,35 @@ template<typename Pointer>
 using ItemType = typename ItemTypeT<Pointer>::Type;
 
 
+/************* Slice *************/
+
+template <Integer Begin, Integer End, Integer Step = std::integral_constant<int, 1>>
+struct Slice
+{
+public:
+
+    Slice(Begin begin, End end) :
+        begin(begin), end(end)
+    {}
+
+    Slice(End end) :
+        end(end)
+    {}
+
+    Slice() {}
+
+    constexpr bool empty() const noexcept { return begin == end; }
+
+    Begin begin;
+    End end;
+    Step step;
+};
+
+template<Integer End>
+Slice(End) -> Slice<std::integral_constant<int, 0>, End, std::integral_constant<int, 1>>;
+
+Slice() -> Slice<std::integral_constant<int, 0>, std::integral_constant<int, 0>, std::integral_constant<int, 1>>;
+
 /************* Tensors *************/
 
 //template<class Tensor>
@@ -149,10 +178,11 @@ public:
     {
         return *this;
     }
-    template<std::integral... Args>
-    Item &at(Args... args)
+    template<typename... Slices>
+    Item &at(Slices... args)
     {
-
+        auto slices = std::make_tuple(Slice(args)...);
+        return *pointer;
     }
 
     template<typename Other>

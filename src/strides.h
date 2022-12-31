@@ -5,21 +5,6 @@
 
 namespace vt {
 
-template<typename T>
-concept Integer = std::convertible_to<T, int>;
-
-template<Integer A, Integer B> struct ProductT {
-    using Result = int;
-};
-
-template<int a, int b>
-struct ProductT<std::integral_constant<int, a>, std::integral_constant<int, b>> {
-    using Result = std::integral_constant<int, a * b>;
-};
-
-template<Integer A, Integer B>
-using Product = typename ProductT<A, B>::Result;
-
 template<AxisLike... Axes>
 struct ShapeStridesTuple;
 
