@@ -201,7 +201,16 @@ public:
         auto slices = std::make_tuple(Slice(args)...);
         return *pointer;
     }
-
+    Item &at(Integer auto... indices)
+    {
+        static_assert(sizeof...(indices) == sizeof...(Axes));
+        return pointer[calcOffset(indices...)];
+    }
+    const Item &at(Integer auto... indices) const
+    {
+        static_assert(sizeof...(indices) == sizeof...(Axes));
+        return pointer[calcOffset(indices...)];
+    }
     template<typename Other>
     operator Tensor<Other, Axes...>() const
     {
@@ -241,6 +250,18 @@ public:
     const ShapeType shape;
     const StridesType strides;
 protected:
+
+    size_t calcOffset(Integer auto... indices)
+    {
+        using namespace std;
+        return apply([] (const auto& ... args) {
+            return (apply([] (Integer auto index, Integer auto size, Integer auto stride) {
+                if (index < 0 || index > size)
+                    throw out_of_range("Index out of range");
+                return index * stride;
+            }, args) + ...);
+        }, zip(make_tuple(indices...), shape.tuple(), strides));
+    }
 
     Tensor(Pointer pointer, typename SST::Pair && sst) :
         shape(sst.first),
