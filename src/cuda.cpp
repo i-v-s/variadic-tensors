@@ -42,17 +42,23 @@ void PinnedBuffer::dealloc(void *ptr)
         throw std::runtime_error("cudaFree error");
 }
 
-HeapBuffer::HeapBuffer(size_t size) :
-    memory(new uint8_t[size])
-{}
-
-void *HeapBuffer::get() noexcept
+template<> void copy<PassiveBuffer, CudaBuffer>(const void* src, void *dst, size_t size)
 {
-    return memory.get();
+    auto result = cudaMemcpy(dst, src, size, cudaMemcpyHostToDevice);
+    if (result != cudaSuccess)
+        throw std::runtime_error("cudaMemcpy error");
 }
 
-const void *HeapBuffer::get() const noexcept {
-    return memory.get();
+template<> void copy<CudaBuffer, PassiveBuffer>(const void* src, void *dst, size_t size)
+{
+    auto result = cudaMemcpy(dst, src, size, cudaMemcpyDeviceToHost);
+    if (result != cudaSuccess)
+        throw std::runtime_error("cudaMemcpy error");
+}
+
+template<> void copy<CudaBuffer, HeapBuffer>(const void* src, void *dst, size_t size)
+{
+    copy<CudaBuffer, PassiveBuffer>(src, dst, size);
 }
 
 }

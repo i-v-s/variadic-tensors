@@ -17,8 +17,8 @@ target_sources(${PROJECT_NAME} PRIVATE
     src/utils.h
     src/shape.h
     src/strides.h
-    src/core.h
-    src/cuda.h   src/cuda.cpp
+    src/core.h     src/core.cpp
+    src/cuda.h     src/cuda.cpp
 )
 
 target_include_directories(${PROJECT_NAME}

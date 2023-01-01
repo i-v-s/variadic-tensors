@@ -102,14 +102,14 @@ auto commonStridesReductor(const Value &value, Bool auto contiguous, Integer aut
         return make_tuple(size, pushFront(make_tuple(count, stride1, stride2), result)); // stride ???
 }
 
-template<typename Contiguous, typename Shape, typename Strides1, typename Strides2>
+template<size_t itemSize, typename Contiguous, typename Shape, typename Strides1, typename Strides2>
 auto commonStrides(const Contiguous &contiguous, const Shape &shape, const Strides1 &strides1, const Strides2 &strides2)
 {
     using namespace std;
     return apply([] (const auto& ... args) {
         return reduce([] (auto... args) {
             return commonStridesReductor(args...);
-        }, make_tuple(IntConst<1>(), make_tuple()), args...);
+        }, make_tuple(IntConst<itemSize>(), make_tuple()), args...);
     }, zip<true>(contiguous, shape, strides1, strides2));
 }
 

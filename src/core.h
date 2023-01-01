@@ -42,10 +42,11 @@ namespace vt {
 
 /************* Buffers *************/
 
+class PassiveBuffer {};
+
 template<class T>
 concept BufferLike =
-        std::is_constructible_v<T, size_t>
-        && !std::copyable<T>;
+        (std::is_constructible_v<T, size_t> && !std::copyable<T>) || std::is_same_v<T, PassiveBuffer>;
 
 template<typename Derived>
 class Buffer
@@ -58,6 +59,7 @@ public:
     Buffer(Buffer &&) = delete;
     Buffer &operator=(const Buffer &) = delete;
     Buffer &operator=(Buffer &&) = delete;
+    operator PassiveBuffer(){ return {}; }
 
     void *get() noexcept { return memory.get(); }
     const void *get() const noexcept { return memory.get(); }
@@ -100,7 +102,6 @@ public:
     {
         return static_cast<Item *>(value->get());
     }
-
     explicit SharedPointer(size_t size) :
         value(new Buffer(size))
     {}
@@ -116,16 +117,27 @@ protected:
 
 /************* ItemType *************/
 
-template<typename Pointer, class Enable = void> struct ItemTypeT;
+template<typename Pointer, class Enable = void> struct GetItemTypeT;
 
-template<typename Pointer>
-struct ItemTypeT<Pointer, typename std::enable_if_t<std::is_pointer_v<Pointer>>> { using Type = std::remove_pointer_t<Pointer>; };
+    template<typename Pointer>
+    struct GetItemTypeT<Pointer, typename std::enable_if_t<std::is_pointer_v<Pointer>>> { using Type = std::remove_pointer_t<Pointer>; };
 
-template<typename Pointer>
-struct ItemTypeT<Pointer, typename std::enable_if_t<!std::is_pointer_v<Pointer>>> { using Type = typename Pointer::Item; };
+    template<typename Pointer>
+    struct GetItemTypeT<Pointer, typename std::enable_if_t<!std::is_pointer_v<Pointer>>> { using Type = typename Pointer::Item; };
 
-template<typename Pointer>
-using ItemType = typename ItemTypeT<Pointer>::Type;
+    template<typename Pointer>
+    using GetItemType = typename GetItemTypeT<Pointer>::Type;
+
+template<typename Pointer, class Enable = void> struct GetBufferTypeT;
+
+    template<typename Pointer>
+    struct GetBufferTypeT<Pointer, typename std::enable_if_t<std::is_pointer_v<Pointer>>> { using Type = PassiveBuffer; };
+
+    template<typename Pointer>
+    struct GetBufferTypeT<Pointer, typename std::enable_if_t<!std::is_pointer_v<Pointer>>> { using Type = typename Pointer::Buffer; };
+
+    template<typename Pointer>
+    using GetBuffer = typename GetBufferTypeT<Pointer>::Type;
 
 
 /************* Slice *************/
@@ -164,8 +176,8 @@ Slice() -> Slice<std::integral_constant<int, 0>, std::integral_constant<int, 0>,
 
 template<BufferLike Buffer, typename Item, typename... TensorArgs> class AllocatedTensor;
 
-//template<typename SrcPtr, typename DstPtr, typename... Strides>
-//void copy(const SrcPtr &ptr, DstPtr &dst, size_t count, const Strides&... strides);
+template<BufferLike SrcBuffer, BufferLike DstBuffer, typename... Strides>
+void copy(const void *src, void *dst, size_t count, const Strides&... strides);
 
 template<typename Pointer_, AxisLike... Axes>
 class Tensor
@@ -174,7 +186,7 @@ public:
     using Pointer = Pointer_;
     using SST = ShapeStridesTuple<Axes...>;
     using Ids = std::integer_sequence<int, Axes::id...>;
-    using Item = ItemType<Pointer>;
+    using Item = GetItemType<Pointer>;
     using ShapeType = Shape<typename SST::Shape>;
     using StridesType = typename SST::Strides;
 
@@ -219,18 +231,18 @@ public:
     }
 
     template<typename OtherPtr, AxisLike... OtherAxes>
-    void copyFrom(const Tensor<OtherPtr, OtherAxes...> &other) const
+    void copyFrom(const Tensor<OtherPtr, OtherAxes...> &other)
     {
         using namespace std;
-        static_assert(is_same_v<Item, ItemType<OtherPtr>>, "Item types must be the same");
+        static_assert(is_same_v<Item, GetItemType<OtherPtr>>, "Item types must be the same");
         static_assert(is_same_v<Ids, typename Tensor<OtherPtr, OtherAxes...>::Ids>, "Tensor dims must be the same");
         static_assert(((Axes::dynamic || OtherAxes::dynamic || Axes::size == OtherAxes::size) && ...), "Tensor shapes must be the same");
         assert(shape == other.shape);
 
-        auto cs = commonStrides(make_tuple(BoolConst<Axes::contiguous && OtherAxes::contiguous>() ...), shape.tuple(), strides, other.strides);
+        auto cs = commonStrides<sizeof(Item)>(make_tuple(BoolConst<Axes::contiguous && OtherAxes::contiguous>() ...), shape.tuple(), strides, other.strides);
         size_t size = get<0>(cs);
         apply([this, size, &other] (auto... args) {
-            copy(other.getPointer(), pointer, size, args...);
+            copy<GetBuffer<OtherPtr>, GetBuffer<Pointer>>(other.rawPointer(), rawPointer(), size, args...);
         }, get<1>(cs));
     }
 
@@ -242,10 +254,8 @@ public:
         return result;
     }
 
-    const Pointer &getPointer() const noexcept
-    {
-        return pointer;
-    }
+    const void *rawPointer() const noexcept { return pointer; }
+    void *rawPointer() noexcept { return pointer; }
 
     const ShapeType shape;
     const StridesType strides;

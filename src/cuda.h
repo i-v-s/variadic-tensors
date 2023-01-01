@@ -44,12 +44,6 @@ void copy(const Item* src, CudaPointer<Item, false> const&, size_t rows, const s
 
 }
 
-template<typename Item>
-void copy(const Item* src, CudaPointer<Item, false> const&, size_t size)
-{
-
-}
-
 }
 
 #endif // CUDA_H
