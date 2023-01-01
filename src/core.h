@@ -155,11 +155,12 @@ Slice() -> Slice<std::integral_constant<int, 0>, std::integral_constant<int, 0>,
 
 template<BufferLike Buffer, typename Item, typename... TensorArgs> class AllocatedTensor;
 
-template<typename Pointer, typename... Axes>
+template<typename Pointer, AxisLike... Axes>
 class Tensor
 {
 public:
     using SST = ShapeStridesTuple<Axes...>;
+    using Ids = std::integer_sequence<int, Axes::id...>;
     using Item = ItemType<Pointer>;
     using ShapeType = Shape<typename SST::Shape>;
     using StridesType = typename SST::Strides;
@@ -173,6 +174,9 @@ public:
     template<std::integral... Args>
     Tensor(Item *pointer, Args... args) : Tensor(pointer, SST::build(args...))
     {}
+
+    Tensor(Tensor &tensor) = default;
+    Tensor &operator=(Tensor &tensor) = default;
 
     auto operator[](uint idx) noexcept
     {
@@ -192,11 +196,21 @@ public:
         return result;
     }
 
+    template<typename OtherPtr, AxisLike... OtherAxes>
+    void copyTo(Tensor<OtherPtr, OtherAxes...> &other) const
+    {
+        using namespace std;
+        static_assert(is_same_v<Item, ItemType<OtherPtr>>, "Item types must be the same");
+        static_assert(is_same_v<Ids, typename Tensor<OtherPtr, OtherAxes...>::Ids>, "Tensor dims must be the same");
+        static_assert(((Axes::dynamic || OtherAxes::dynamic || Axes::size == OtherAxes::size) && ...), "Tensor shapes must be the same");
+        assert(shape == other.shape);
+    }
+
     template<BufferLike Buffer>
     auto to() const
     {
         AllocatedTensor<Buffer, Item, RemoveStride<Axes>...> result(shape);
-
+        copyTo(result);
         return result;
     }
 
