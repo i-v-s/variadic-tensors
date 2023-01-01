@@ -42,16 +42,30 @@ namespace vt {
 
 /************* Buffers *************/
 
-class PassiveBuffer {};
+enum class Device
+{
+    Host,
+    Cuda,
+    OpenCL
+};
+
+class PassiveBuffer {
+    constexpr static Device device = Device::Host;
+};
 
 template<class T>
 concept BufferLike =
         (std::is_constructible_v<T, size_t> && !std::copyable<T>) || std::is_same_v<T, PassiveBuffer>;
 
+template<class T>
+concept HostBuffer =
+        BufferLike<T> && T::device == Device::Host;
+
 template<typename Derived>
 class Buffer
 {
 public:
+    constexpr static Device device = Device::Host;
     Buffer() = delete;
     Buffer(size_t size) : memory(Derived::malloc(size), &Derived::dealloc) {}
 
@@ -70,6 +84,7 @@ private:
 class HeapBuffer
 {
 public:
+    constexpr static Device device = Device::Host;
     HeapBuffer(size_t size);
 
     HeapBuffer(const HeapBuffer &) = delete;
@@ -126,7 +141,7 @@ template<typename Pointer, class Enable = void> struct GetItemTypeT;
     struct GetItemTypeT<Pointer, typename std::enable_if_t<!std::is_pointer_v<Pointer>>> { using Type = typename Pointer::Item; };
 
     template<typename Pointer>
-    using GetItemType = typename GetItemTypeT<Pointer>::Type;
+    using GetItem = typename GetItemTypeT<Pointer>::Type;
 
 template<typename Pointer, class Enable = void> struct GetBufferTypeT;
 
@@ -186,7 +201,7 @@ public:
     using Pointer = Pointer_;
     using SST = ShapeStridesTuple<Axes...>;
     using Ids = std::integer_sequence<int, Axes::id...>;
-    using Item = GetItemType<Pointer>;
+    using Item = GetItem<Pointer>;
     using ShapeType = Shape<typename SST::Shape>;
     using StridesType = typename SST::Strides;
 
@@ -234,7 +249,7 @@ public:
     void copyFrom(const Tensor<OtherPtr, OtherAxes...> &other)
     {
         using namespace std;
-        static_assert(is_same_v<Item, GetItemType<OtherPtr>>, "Item types must be the same");
+        static_assert(is_same_v<Item, GetItem<OtherPtr>>, "Item types must be the same");
         static_assert(is_same_v<Ids, typename Tensor<OtherPtr, OtherAxes...>::Ids>, "Tensor dims must be the same");
         static_assert(((Axes::dynamic || OtherAxes::dynamic || Axes::size == OtherAxes::size) && ...), "Tensor shapes must be the same");
         assert(shape == other.shape);

@@ -9,6 +9,7 @@ class PinnedBuffer: public Buffer<PinnedBuffer>
 public:
     using Parent = Buffer<PinnedBuffer>;
     using Parent::Parent;
+    constexpr static Device device = Device::Host;
 protected:
     static void *malloc(size_t size);
     static void dealloc(void *ptr);
@@ -20,6 +21,7 @@ class CudaBuffer: public Buffer<CudaBuffer>
 public:
     using Parent = Buffer<CudaBuffer>;
     using Parent::Parent;
+    constexpr static Device device = Device::Cuda;
 protected:
     static void *malloc(size_t size);
     static void dealloc(void *ptr);
