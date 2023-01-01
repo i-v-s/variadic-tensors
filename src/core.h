@@ -7,8 +7,6 @@
 #include <functional>
 #include <tuple>
 #include <utility>
-#include <numeric>
-#include <type_traits>
 #include <sstream>
 #include <assert.h>
 
@@ -16,6 +14,17 @@
 #include "./shape.h"
 #include "./utils.h"
 #include "./strides.h"
+
+inline std::ostream& operator<<(std::ostream &stream, std::tuple<>) noexcept
+{
+    return stream << "[]";
+}
+
+template<typename T, T v>
+inline std::ostream& operator<<(std::ostream &stream, std::integral_constant<T, v>) noexcept
+{
+    return stream << v << "c";
+}
 
 template<typename Arg, typename... Args>
 std::ostream& operator<<(std::ostream &stream, const std::tuple<Arg, Args...> &t) noexcept
@@ -155,10 +164,14 @@ Slice() -> Slice<std::integral_constant<int, 0>, std::integral_constant<int, 0>,
 
 template<BufferLike Buffer, typename Item, typename... TensorArgs> class AllocatedTensor;
 
-template<typename Pointer, AxisLike... Axes>
+//template<typename SrcPtr, typename DstPtr, typename... Strides>
+//void copy(const SrcPtr &ptr, DstPtr &dst, size_t count, const Strides&... strides);
+
+template<typename Pointer_, AxisLike... Axes>
 class Tensor
 {
 public:
+    using Pointer = Pointer_;
     using SST = ShapeStridesTuple<Axes...>;
     using Ids = std::integer_sequence<int, Axes::id...>;
     using Item = ItemType<Pointer>;
@@ -197,21 +210,32 @@ public:
     }
 
     template<typename OtherPtr, AxisLike... OtherAxes>
-    void copyTo(Tensor<OtherPtr, OtherAxes...> &other) const
+    void copyFrom(const Tensor<OtherPtr, OtherAxes...> &other) const
     {
         using namespace std;
         static_assert(is_same_v<Item, ItemType<OtherPtr>>, "Item types must be the same");
         static_assert(is_same_v<Ids, typename Tensor<OtherPtr, OtherAxes...>::Ids>, "Tensor dims must be the same");
         static_assert(((Axes::dynamic || OtherAxes::dynamic || Axes::size == OtherAxes::size) && ...), "Tensor shapes must be the same");
         assert(shape == other.shape);
+
+        auto cs = commonStrides(make_tuple(BoolConst<Axes::contiguous && OtherAxes::contiguous>() ...), shape.tuple(), strides, other.strides);
+        size_t size = get<0>(cs);
+        apply([this, size, &other] (auto... args) {
+            copy(other.getPointer(), pointer, size, args...);
+        }, get<1>(cs));
     }
 
     template<BufferLike Buffer>
     auto to() const
     {
         AllocatedTensor<Buffer, Item, RemoveStride<Axes>...> result(shape);
-        copyTo(result);
+        result.copyFrom(*this);
         return result;
+    }
+
+    const Pointer &getPointer() const noexcept
+    {
+        return pointer;
     }
 
     const ShapeType shape;

@@ -38,6 +38,12 @@ using CudaTensor = AllocatedTensor<CudaBuffer, Item, Args...>;
 template<typename Item, typename... Args>
 using PinnedTensor = AllocatedTensor<PinnedBuffer, Item, Args...>;
 
+template<typename Item>
+void copy(const Item* src, CudaPointer<Item, false> const&, size_t rows, const std::tuple<int, int, int> &strides)
+{
+
+}
+
 }
 
 #endif // CUDA_H

@@ -17,6 +17,14 @@ struct Shape: public Tuple_
     Shape(Tuple && v) : Tuple(std::forward<Tuple>(v))
     {
     }
+    Tuple &tuple() noexcept
+    {
+        return static_cast<Tuple>(*this);
+    }
+    const Tuple &tuple() const noexcept
+    {
+        return *static_cast<const Tuple*>(this);
+    }
     static constexpr std::size_t size() noexcept
     {
         return std::tuple_size_v<Tuple>;

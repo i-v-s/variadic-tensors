@@ -11,9 +11,19 @@ namespace vt {
 template<typename T>
 concept Integer = std::convertible_to<T, int>;
 
-template<int value>
-using Const = std::integral_constant<int, value>;
+template<typename T>
+concept Bool = std::convertible_to<T, bool>;
 
+template<int value>
+using IntConst = std::integral_constant<int, value>;
+
+template<bool value>
+using BoolConst = std::integral_constant<bool, value>;
+
+template<typename T>
+concept IntConstLike =
+        Integer<T>
+        && !requires(T &x) { x = int(0); };
 
 /************* Product *************/
 
@@ -29,22 +39,32 @@ struct ProductT<std::integral_constant<int, a>, std::integral_constant<int, b>> 
 template<Integer A, Integer B>
 using Product = typename ProductT<A, B>::Result;
 
+template<Integer A, Integer B>
+Product<A, B> product(A a, B b) noexcept
+{
+    using Result = Product<A, B>;
+    if constexpr(IntConstLike<Result>)
+        return Result();
+    else
+        return a * b;
+}
+
 
 /************* TupleCat *************/
 
 template<typename... Tuples> struct TupleCatT;
 
-template<typename... Args1, typename... Args2, typename... Tuples>
-struct TupleCatT<std::tuple<Args1...>, std::tuple<Args2...>, Tuples...>
-{
-    using Type = typename TupleCatT<std::tuple<Args1..., Args2...>, Tuples...>::Type;
-};
+    template<typename... Args1, typename... Args2, typename... Tuples>
+    struct TupleCatT<std::tuple<Args1...>, std::tuple<Args2...>, Tuples...>
+    {
+        using Type = typename TupleCatT<std::tuple<Args1..., Args2...>, Tuples...>::Type;
+    };
 
-template<typename Tuple> struct TupleCatT<Tuple> { using Type = Tuple; };
-template<> struct TupleCatT<> { using Type = std::tuple<>; };
+    template<typename Tuple> struct TupleCatT<Tuple> { using Type = Tuple; };
+    template<> struct TupleCatT<> { using Type = std::tuple<>; };
 
-template<typename... Tuples>
-using TupleCat = typename TupleCatT<Tuples...>::Type;
+    template<typename... Tuples>
+    using TupleCat = typename TupleCatT<Tuples...>::Type;
 
 template<typename Tuple, typename Item>
 using PushBack = TupleCat<Tuple, std::tuple<Item>>;
@@ -87,11 +107,11 @@ constexpr auto gather(std::index_sequence<I...>, const Tuples& ... a) noexcept
 /************* tupleSlice *************/
 
 template <std::size_t offset, std::size_t ... indices>
-std::index_sequence<(offset + indices)...> addOffset(std::index_sequence<indices...>)
-{
-    return {};
-}
-\
+std::index_sequence<(offset + indices)...> addOffset(std::index_sequence<indices...>) { return {}; }
+
+template <std::size_t offset, std::size_t ... indices>
+std::index_sequence<(offset - indices)...> subOffset(std::index_sequence<indices...>) { return {}; }
+
 template<int b, int e = -1, typename... Args>
 constexpr auto tupleSlice(const std::tuple<Args...> &t) noexcept
 {
@@ -118,13 +138,16 @@ constexpr auto tupleToArray(const std::tuple<Args...> &t)
 
 /************* zip *************/
 
-template<typename Tuple, typename... Tuples>
+template<bool reverse = false, typename Tuple, typename... Tuples>
 auto zip(const Tuple &arg, const Tuples&... args)
 {
     using namespace std;
     constexpr auto size = tuple_size_v<Tuple>;
     static_assert(((size == tuple_size_v<Tuples>) && ...), "Tuples must be the same size");
-    return gather(make_index_sequence<size>{}, arg, args...);
+    if constexpr(reverse)
+        return gather(subOffset<size - 1>(make_index_sequence<size>{}), arg, args...);
+    else
+        return gather(make_index_sequence<size>{}, arg, args...);
 }
 
 
@@ -156,6 +179,25 @@ struct TrueSeqT<i> {using Type = std::index_sequence<>;};
 
 template<bool... bs>
 using TrueSeq = typename TrueSeqT<0, bs...>::Type;
+
+
+/************* TupleReduce *************/
+
+template<typename Fn, typename Value>
+auto reduce(Fn fn, Value value) noexcept
+{
+    return value;
+}
+
+template<typename Fn, typename Value, typename Arg, typename... Args>
+auto reduce(Fn &&fn, const Value value, Arg arg, Args... args) noexcept
+{
+    return reduce(
+        fn,
+        std::apply([&] (auto... args) { return fn(value, args...); }, arg),
+        args...);
+}
+
 
 }
 

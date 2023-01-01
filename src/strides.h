@@ -5,6 +5,9 @@
 
 namespace vt {
 
+
+/************* ShapeStridesTuple *************/
+
 template<AxisLike... Axes>
 struct ShapeStridesTuple;
 
@@ -85,6 +88,30 @@ auto buildShapeStrides(Args... args)
     return ShapeStridesTuple<Axes...>::build(args...);
 }
 
+
+/************* CommonStrides *************/
+
+template<typename Value>
+auto commonStridesReductor(const Value &value, Bool auto contiguous, Integer auto size, Integer auto stride1, Integer auto stride2) noexcept
+{
+    using namespace std;
+    auto &[count, result] = value;
+    if constexpr(contiguous)
+        return make_tuple(product(count, size), result);
+    else
+        return make_tuple(size, pushFront(make_tuple(count, stride1, stride2), result)); // stride ???
+}
+
+template<typename Contiguous, typename Shape, typename Strides1, typename Strides2>
+auto commonStrides(const Contiguous &contiguous, const Shape &shape, const Strides1 &strides1, const Strides2 &strides2)
+{
+    using namespace std;
+    return apply([] (const auto& ... args) {
+        return reduce([] (auto... args) {
+            return commonStridesReductor(args...);
+        }, make_tuple(IntConst<1>(), make_tuple()), args...);
+    }, zip<true>(contiguous, shape, strides1, strides2));
+}
 
 }
 
