@@ -168,22 +168,26 @@ template<BufferLike Buffer, typename Item, typename... TensorArgs> class Allocat
 template<BufferLike SrcBuffer, BufferLike DstBuffer, typename... Strides>
 void copy(const void *src, void *dst, size_t count, const Strides&... strides);
 
-template<typename Pointer_>
-class Reference
+template<typename Pointer_> class ConstReference
 {
 public:
     using Pointer = Pointer_;
     using Item = GetItem<Pointer>;
-    Reference(Pointer pointer) : pointer(pointer) {}
-    Reference(Reference &&) = default;
+    ConstReference(Pointer pointer) : pointer(pointer) {}
+    ConstReference(ConstReference &&) = default;
     Item operator() () const noexcept { return *pointer; }
-    Reference &operator=(const Item &item) noexcept
+protected:
+    Pointer pointer;
+};
+
+template<typename Pointer> class Reference: public ConstReference<Pointer>
+{
+public:
+    Reference &operator=(const GetItem<Pointer> &item) noexcept
     {
-        *pointer = item;
+        *ConstReference<Pointer>::pointer = item;
         return *this;
     }
-private:
-    Pointer pointer;
 };
 
 template<typename Pointer_, AxisLike... Axes>
@@ -216,40 +220,11 @@ public:
     Tensor(Tensor &tensor) = default;
     Tensor &operator=(Tensor &tensor) = default;
 
-    auto operator[](uint idx) noexcept
+    template<typename Idx>
+    auto operator[](Idx idx) noexcept
     {
-        return *this;
+        return at(idx);
     }
-    /*template<Integer Index, typename... Args>
-    auto at(Index index, Args ... args)
-    {
-        Slice r(index);
-        return at(args...);
-        //return at(args);
-    }
-
-    template<typename... Args>
-    auto at(std::initializer_list<int> list, Args... args)
-    {
-        //Slice r(list);
-        return at(args...);
-    }
-
-    template<std::convertible_to<ST> St, typename... Args>
-    auto at(St st, Args ... args)
-    {
-        Slice r(st);
-        return at(args...);
-        //return at(args);
-    }
-
-
-    template<typename... SArgs, typename... Args>
-    auto at(Slice<SArgs...> slice, Args ... args)
-    {
-        return;
-        //return at(args);
-    }*/
 
     template<int I, bool C, typename Result>
     struct TensorInfo
@@ -304,16 +279,7 @@ public:
             return NewTensor(ptr, shape, strides);
         }
     }
-    /*Item &at(Integer auto... indices)
-    {
-        static_assert(sizeof...(indices) == sizeof...(Axes));
-        return pointer[calcOffset(indices...)];
-    }
-    const Item &at(Integer auto... indices) const
-    {
-        static_assert(sizeof...(indices) == sizeof...(Axes));
-        return pointer[calcOffset(indices...)];
-    }*/
+
     template<typename Other>
     operator Tensor<Other, Axes...>() const
     {
