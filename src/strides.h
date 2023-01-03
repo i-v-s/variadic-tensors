@@ -89,7 +89,7 @@ auto buildShapeStrides(Args... args)
 }
 
 
-/************* CommonStrides *************/
+/************* commonStrides *************/
 
 template<typename Value>
 auto commonStridesReductor(const Value &value, Bool auto contiguous, Integer auto size, Integer auto stride1, Integer auto stride2) noexcept

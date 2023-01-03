@@ -14,6 +14,9 @@
 #include "./shape.h"
 #include "./utils.h"
 #include "./strides.h"
+#include "./slice.h"
+
+namespace vt {
 
 inline std::ostream& operator<<(std::ostream &stream, std::tuple<>) noexcept
 {
@@ -38,7 +41,6 @@ std::ostream& operator<<(std::ostream &stream, const std::tuple<Arg, Args...> &t
     return stream;
 }
 
-namespace vt {
 
 /************* Buffers *************/
 
@@ -155,34 +157,6 @@ template<typename Pointer, class Enable = void> struct GetBufferTypeT;
     using GetBuffer = typename GetBufferTypeT<Pointer>::Type;
 
 
-/************* Slice *************/
-
-template <Integer Begin, Integer End, Integer Step = std::integral_constant<int, 1>>
-struct Slice
-{
-public:
-
-    Slice(Begin begin, End end) :
-        begin(begin), end(end)
-    {}
-
-    Slice(End end) :
-        end(end)
-    {}
-
-    Slice() {}
-
-    constexpr bool empty() const noexcept { return begin == end; }
-
-    Begin begin;
-    End end;
-    Step step;
-};
-
-template<Integer End>
-Slice(End) -> Slice<std::integral_constant<int, 0>, End, std::integral_constant<int, 1>>;
-
-Slice() -> Slice<std::integral_constant<int, 0>, std::integral_constant<int, 0>, std::integral_constant<int, 1>>;
 
 /************* Tensors *************/
 
@@ -193,6 +167,24 @@ template<BufferLike Buffer, typename Item, typename... TensorArgs> class Allocat
 
 template<BufferLike SrcBuffer, BufferLike DstBuffer, typename... Strides>
 void copy(const void *src, void *dst, size_t count, const Strides&... strides);
+
+template<typename Pointer_>
+class Reference
+{
+public:
+    using Pointer = Pointer_;
+    using Item = GetItem<Pointer>;
+    Reference(Pointer pointer) : pointer(pointer) {}
+    Reference(Reference &&) = default;
+    Item operator() () const noexcept { return *pointer; }
+    Reference &operator=(const Item &item) noexcept
+    {
+        *pointer = item;
+        return *this;
+    }
+private:
+    Pointer pointer;
+};
 
 template<typename Pointer_, AxisLike... Axes>
 class Tensor
@@ -211,8 +203,14 @@ public:
         pointer(pointer)
     {}
 
+    Tensor(Pointer pointer, const ShapeType &shape, const StridesType &strides) :
+        shape(shape),
+        strides(strides),
+        pointer(pointer)
+    {}
+
     template<std::integral... Args>
-    Tensor(Item *pointer, Args... args) : Tensor(pointer, SST::build(args...))
+    Tensor(Pointer pointer, Args... args) : Tensor(pointer, SST::build(args...))
     {}
 
     Tensor(Tensor &tensor) = default;
@@ -222,13 +220,91 @@ public:
     {
         return *this;
     }
-    template<typename... Slices>
-    Item &at(Slices... args)
+    /*template<Integer Index, typename... Args>
+    auto at(Index index, Args ... args)
     {
-        auto slices = std::make_tuple(Slice(args)...);
-        return *pointer;
+        Slice r(index);
+        return at(args...);
+        //return at(args);
     }
-    Item &at(Integer auto... indices)
+
+    template<typename... Args>
+    auto at(std::initializer_list<int> list, Args... args)
+    {
+        //Slice r(list);
+        return at(args...);
+    }
+
+    template<std::convertible_to<ST> St, typename... Args>
+    auto at(St st, Args ... args)
+    {
+        Slice r(st);
+        return at(args...);
+        //return at(args);
+    }
+
+
+    template<typename... SArgs, typename... Args>
+    auto at(Slice<SArgs...> slice, Args ... args)
+    {
+        return;
+        //return at(args);
+    }*/
+
+    template<int I, bool C, typename Result>
+    struct TensorInfo
+    {
+        static constexpr int index = I;
+        static constexpr bool ctg = C;
+        size_t offset = 0;
+        Result result;
+    };
+
+    template<typename... Slices>
+    auto at(Slices... args)
+    {
+        using namespace std;
+        constexpr size_t dims = sizeof...(Axes);
+        auto slices1 = make_tuple(Slice(args)...);
+        constexpr auto axes = make_tuple(Axes()...);
+        constexpr size_t news = countIf([] (const auto &s) { return s.kind == ST::New; }, slices1);
+        auto slices2 = tupleFill<dims + news>(Slice(), slices1);
+        auto [offset, items] = apply([this, &axes] (auto... args) {
+            return reduce([this, &axes] (const auto &value, auto slice) {
+                constexpr int index = value.index;
+                auto &size = get<index>(shape);
+                auto &stride = get<index>(strides);
+                auto &axis = get<index>(axes);
+                if constexpr (slice.kind == ST::Index) {
+                    assert(slice.end >= 0 && slice.end < size);
+                    return TensorInfo<index - 1, axis.size == 1 && value.ctg, decltype(value.result)>{value.offset + product(slice.end, stride), value.result};
+                } else if constexpr(slice.kind == ST::None) {
+                    Axis<axis.id, axis.size, value.ctg ? Auto : axis.stride> newAxis;
+                    auto result = pushFront(make_tuple(size, stride, newAxis), value.result);
+                    return TensorInfo<index - 1, axis.contiguous, decltype(result)>{value.offset, result};
+                } else if constexpr(slice.kind == ST::New) {
+                    assert(!"!!!");
+                    return TensorInfo{value.offset, pushFront(make_tuple(1, 0, Axis<0, 1>()), value.result)};
+                } else if constexpr(slice.kind == ST::Slice) {
+                    auto size = slice.size();
+                    Axis<axis.id, is_same_v<decltype(size), int> ? Dynamic : static_cast<int>(size), value.ctg ? axis.stride : Dynamic> newAxis;
+                    auto result = pushFront(make_tuple(size, product(stride, slice.step), newAxis), value.result);
+                    return TensorInfo<index - 1, false /*?*/, decltype(result)>{value.offset + product(slice.begin, stride), result};
+                }
+            }, TensorInfo<dims - 1, true, tuple<>>(), args...);
+        }, zip<true>(slices2));
+        if constexpr(tuple_size_v<decltype(items)> == 0) {
+            return Reference(pointer + offset);
+        } else {
+            auto [shape, strides, axes] = applyZip(items);
+            auto ptr = pointer + offset;
+            using NewTensor = Apply<Tensor, decltype(pushFront(ptr, axes))>;
+            static_assert(is_convertible_v<decltype(shape), typename NewTensor::ShapeType>, "Wrong shape deduced");
+            static_assert(is_convertible_v<decltype(strides), typename NewTensor::StridesType>, "Wrong strides deduced");
+            return NewTensor(ptr, shape, strides);
+        }
+    }
+    /*Item &at(Integer auto... indices)
     {
         static_assert(sizeof...(indices) == sizeof...(Axes));
         return pointer[calcOffset(indices...)];
@@ -237,7 +313,7 @@ public:
     {
         static_assert(sizeof...(indices) == sizeof...(Axes));
         return pointer[calcOffset(indices...)];
-    }
+    }*/
     template<typename Other>
     operator Tensor<Other, Axes...>() const
     {
@@ -254,7 +330,7 @@ public:
         static_assert(((Axes::dynamic || OtherAxes::dynamic || Axes::size == OtherAxes::size) && ...), "Tensor shapes must be the same");
         assert(shape == other.shape);
 
-        auto cs = commonStrides<sizeof(Item)>(make_tuple(BoolConst<Axes::contiguous && OtherAxes::contiguous>() ...), shape.tuple(), strides, other.strides);
+        auto cs = commonStrides<sizeof(Item)>(make_tuple(BoolConst<Axes::contiguous && OtherAxes::contiguous>() ...), shape.tuple(), other.strides, strides);
         size_t size = get<0>(cs);
         apply([this, size, &other] (auto... args) {
             copy<GetBuffer<OtherPtr>, GetBuffer<Pointer>>(other.rawPointer(), rawPointer(), size, args...);
@@ -271,6 +347,15 @@ public:
 
     const void *rawPointer() const noexcept { return pointer; }
     void *rawPointer() noexcept { return pointer; }
+
+    friend inline std::ostream& operator<<(std::ostream &stream, Tensor &t) noexcept
+    {
+        stream << "Tensor(";
+        ((stream << Axes()), ...);
+        stream << ", shape: " << t.shape.tuple();
+        stream << ", strides: " << t.strides;
+        return stream << ")";
+    }
 
     const ShapeType shape;
     const StridesType strides;
@@ -333,5 +418,7 @@ template<typename Item, typename... Args>
 using HeapTensor = AllocatedTensor<HeapBuffer, Item, Args...>;
 
 }
+
+using vt::operator<<;
 
 #endif // VT_CORE_H

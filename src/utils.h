@@ -2,6 +2,7 @@
 #define VT_UTILS_H
 #include <tuple>
 #include <concepts>
+#include <functional>
 
 namespace vt {
 
@@ -25,29 +26,59 @@ concept IntConstLike =
         Integer<T>
         && !requires(T &x) { x = int(0); };
 
-/************* Product *************/
+/************* Operate *************/
 
-template<Integer A, Integer B> struct ProductT {
+template<typename O, Integer A, Integer B> struct OperateT {
     using Result = int;
 };
 
-template<int a, int b>
-struct ProductT<std::integral_constant<int, a>, std::integral_constant<int, b>> {
-    using Result = std::integral_constant<int, a * b>;
+template<typename O, int a, int b>
+struct OperateT<O, std::integral_constant<int, a>, std::integral_constant<int, b>> {
+    using Result = std::integral_constant<int, O()(a, b)>;
 };
 
-template<Integer A, Integer B>
-using Product = typename ProductT<A, B>::Result;
+template<typename O, Integer A, Integer B>
+using Operate = typename OperateT<O, A, B>::Result;
 
-template<Integer A, Integer B>
-Product<A, B> product(A a, B b) noexcept
+template<typename O, Integer A, Integer B>
+Operate<O, A, B> operate(O && o, A a, B b) noexcept
 {
-    using Result = Product<A, B>;
+    using Result = Operate<O, A, B>;
     if constexpr(IntConstLike<Result>)
         return Result();
     else
-        return a * b;
+        return o(a, b);
 }
+
+template<Integer A, Integer B>
+using Product = Operate<std::multiplies<int>, A, B>;
+
+auto product(Integer auto a, Integer auto b) noexcept
+{
+    return operate(std::multiplies<int>(), a, b);
+}
+
+auto add(Integer auto a, Integer auto b) noexcept
+{
+    return operate(std::plus<int>(), a, b);
+}
+
+template<int b = 1>
+auto add(Integer auto a) noexcept
+{
+    return operate(std::plus<int>(), a, std::integral_constant<int, b>());
+}
+
+auto sub(Integer auto a, Integer auto b) noexcept
+{
+    return operate(std::minus<int>(), a, b);
+}
+
+auto div(Integer auto a, Integer auto b) noexcept
+{
+    return operate(std::divides<int>(), a, b);
+}
+
 
 
 /************* TupleCat *************/
@@ -76,6 +107,12 @@ template<typename Item, typename Tuple>
 auto pushFront(Item && item, Tuple && tuple) noexcept {
     using namespace std;
     return tuple_cat(make_tuple(forward<Item>(item)), forward<Tuple>(tuple));
+}
+
+template<typename Tuple, typename Item>
+auto pushBack(Tuple && tuple, Item && item) noexcept {
+    using namespace std;
+    return tuple_cat(forward<Tuple>(tuple), make_tuple(forward<Item>(item)));
 }
 
 
@@ -150,6 +187,42 @@ auto zip(const Tuple &arg, const Tuples&... args)
         return gather(make_index_sequence<size>{}, arg, args...);
 }
 
+template<bool reverse = false, typename Tuple>
+auto applyZip(const Tuple &arg)
+{
+    using namespace std;
+    return apply([] (auto... args) {
+        return zip<reverse>(args...);
+    }, arg);
+}
+
+
+/************* Apply *************/
+
+template<template<typename...> typename Target, typename Source>
+struct ApplyT;
+
+template<template<typename...> typename Target, typename... Args>
+struct ApplyT<Target, std::tuple<Args...>> { using Type = Target<Args...>; };
+
+template<template<typename...> typename Target, typename Source>
+using Apply = typename ApplyT<Target, Source>::Type;
+
+
+/************* tupleFill *************/
+
+template<std::size_t size, typename Item, typename Tuple = std::tuple<>>
+auto tupleFill(const Item &item, const Tuple &tuple = Tuple())
+{
+    using namespace std;
+    constexpr auto tupleSize = tuple_size_v<Tuple>;
+    static_assert(tupleSize <= size, "Tuple size is larger then requested");
+    if constexpr(tupleSize == size)
+        return tuple;
+    else
+        return pushBack(tupleFill<size - 1>(item, tuple), item);
+}
+
 
 /************* true seq *************/
 
@@ -198,6 +271,16 @@ auto reduce(Fn &&fn, const Value value, Arg arg, Args... args) noexcept
         args...);
 }
 
+
+/************* countIf *************/
+
+template<typename Fn, typename Tuple>
+constexpr int countIf(Fn && fn, const Tuple &tp) noexcept
+{
+    return std::apply([&fn] (const auto&... args) {
+        return ((fn(args) ? 1 : 0) + ...);
+    }, tp);
+}
 
 }
 

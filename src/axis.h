@@ -28,6 +28,17 @@ template <int ID, int SIZE = Dynamic, int STRIDE = Auto> struct Axis
         STRIDE == Auto, Empty,
         typename std::conditional_t<STRIDE == Dynamic, int, std::integral_constant<int, stride>>
     >;
+
+    friend std::ostream& operator<< (std::ostream& stream, const Axis& t) noexcept
+    {
+        stream << "A<" << ID << ":";
+        if constexpr(dynamic) stream << "D:";
+        else stream << SIZE << ":";
+        if constexpr(contiguous) stream << "C";
+        else if constexpr(STRIDE == Dynamic) stream << "D";
+        else stream << STRIDE;
+        return stream << ">";
+    }
 };
 
 template<class T>
