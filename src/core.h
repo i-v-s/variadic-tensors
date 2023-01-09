@@ -173,6 +173,7 @@ template<typename Pointer_> class ConstReference
 public:
     using Pointer = Pointer_;
     using Item = GetItem<Pointer>;
+    ConstReference() = delete;
     ConstReference(Pointer pointer) : pointer(pointer) {}
     ConstReference(ConstReference &&) = default;
     Item operator() () const noexcept { return *pointer; }
@@ -180,9 +181,12 @@ protected:
     Pointer pointer;
 };
 
-template<typename Pointer> class Reference: public ConstReference<Pointer>
+template<typename Pointer>
+class Reference: public ConstReference<Pointer>
 {
 public:
+    using ConstReference<Pointer>::ConstReference;
+    Reference(Pointer pointer) : ConstReference<Pointer>(pointer) {}
     Reference &operator=(const GetItem<Pointer> &item) noexcept
     {
         *ConstReference<Pointer>::pointer = item;
