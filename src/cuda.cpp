@@ -9,8 +9,10 @@ void *CudaBuffer::malloc(size_t size)
 {
     void *ptr;
     auto result = cudaMalloc(&ptr, size);
-    if(result != cudaSuccess)
+    if(result != cudaSuccess) {
+        auto e = cudaGetErrorString(result);
         throw std::runtime_error("cudaMalloc error");
+    }
     return ptr;
 }
 
@@ -42,23 +44,34 @@ void PinnedBuffer::dealloc(void *ptr)
         throw std::runtime_error("cudaFree error");
 }
 
-template<> void copy<PassiveBuffer, CudaBuffer>(const void* src, void *dst, size_t size)
+void HostCudaCopy::copy(const void *src, void *dst, size_t size)
 {
     auto result = cudaMemcpy(dst, src, size, cudaMemcpyHostToDevice);
     if (result != cudaSuccess)
-        throw std::runtime_error("cudaMemcpy error");
+        throw std::runtime_error("cudaMemcpy HostToDevice error");
 }
 
-template<> void copy<CudaBuffer, PassiveBuffer>(const void* src, void *dst, size_t size)
+void HostCudaCopy::copy(const void *src, void *dst, size_t rows, const std::tuple<int, int, int> &strides)
+{
+    auto [width, s, d] = strides;
+    auto result = cudaMemcpy2D(dst, d, src, s, width, rows, cudaMemcpyHostToDevice);
+    if (result != cudaSuccess)
+        throw std::runtime_error("cudaMemcpy2D HostToDevice error");
+}
+
+void CudaHostCopy::copy(const void *src, void *dst, size_t size)
 {
     auto result = cudaMemcpy(dst, src, size, cudaMemcpyDeviceToHost);
     if (result != cudaSuccess)
-        throw std::runtime_error("cudaMemcpy error");
+        throw std::runtime_error("cudaMemcpy DeviceToHost error");
 }
 
-template<> void copy<CudaBuffer, HeapBuffer>(const void* src, void *dst, size_t size)
+void CudaHostCopy::copy(const void *src, void *dst, size_t rows, const std::tuple<int, int, int> &strides)
 {
-    copy<CudaBuffer, PassiveBuffer>(src, dst, size);
+    auto [width, s, d] = strides;
+    auto result = cudaMemcpy2D(dst, d, src, s, width, rows, cudaMemcpyDeviceToHost);
+    if (result != cudaSuccess)
+        throw std::runtime_error("cudaMemcpy2D DeviceToHost error");
 }
 
 }

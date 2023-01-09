@@ -52,6 +52,7 @@ enum class Device
 };
 
 class PassiveBuffer {
+public:
     constexpr static Device device = Device::Host;
 };
 
@@ -60,8 +61,12 @@ concept BufferLike =
         (std::is_constructible_v<T, size_t> && !std::copyable<T>) || std::is_same_v<T, PassiveBuffer>;
 
 template<class T>
-concept HostBuffer =
+concept HostBufferLike =
         BufferLike<T> && T::device == Device::Host;
+
+template<class T>
+concept CudaBufferLike =
+        BufferLike<T> && T::device == Device::Cuda;
 
 template<typename Derived>
 class Buffer
@@ -132,7 +137,7 @@ protected:
     std::shared_ptr<Buffer> value;
 };
 
-/************* ItemType *************/
+/************* GetItem, GetBuffer *************/
 
 template<typename Pointer, class Enable = void> struct GetItemTypeT;
 
@@ -157,6 +162,19 @@ template<typename Pointer, class Enable = void> struct GetBufferTypeT;
     using GetBuffer = typename GetBufferTypeT<Pointer>::Type;
 
 
+/************* Actions *************/
+
+template<BufferLike SrcBuffer, BufferLike DstBuffer> struct Copy;
+
+struct HostCopy
+{
+    static void copy(const void* src, void *dst, size_t size);
+    static void copy(const void* src, void *dst, size_t rows, const std::tuple<int, int, int> &strides);
+};
+
+template<HostBufferLike Src, HostBufferLike Dst>
+struct Copy<Src, Dst> : HostCopy {};
+
 
 /************* Tensors *************/
 
@@ -164,9 +182,6 @@ template<typename Pointer, class Enable = void> struct GetBufferTypeT;
 //concept TensorLike =
 
 template<BufferLike Buffer, typename Item, typename... TensorArgs> class AllocatedTensor;
-
-template<BufferLike SrcBuffer, BufferLike DstBuffer, typename... Strides>
-void copy(const void *src, void *dst, size_t count, const Strides&... strides);
 
 template<typename Pointer_> class ConstReference
 {
@@ -303,7 +318,7 @@ public:
         auto cs = commonStrides<sizeof(Item)>(make_tuple(BoolConst<Axes::contiguous && OtherAxes::contiguous>() ...), shape.tuple(), other.strides, strides);
         size_t size = get<0>(cs);
         apply([this, size, &other] (auto... args) {
-            copy<GetBuffer<OtherPtr>, GetBuffer<Pointer>>(other.rawPointer(), rawPointer(), size, args...);
+            Copy<GetBuffer<OtherPtr>, GetBuffer<Pointer>>::copy(other.rawPointer(), rawPointer(), size, args...);
         }, get<1>(cs));
     }
 

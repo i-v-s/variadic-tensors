@@ -19,12 +19,12 @@ const void *HeapBuffer::get() const noexcept {
     return memory.get();
 }
 
-template<> void copy<PassiveBuffer, HeapBuffer>(const void* src, void *dst, size_t size)
+void HostCopy::copy(const void *src, void *dst, size_t size)
 {
     std::memcpy(dst, src, size);
 }
 
-template<> void copy<PassiveBuffer, HeapBuffer, std::tuple<int, int, int>>(const void* src, void *dst, size_t rows, const std::tuple<int, int, int> &strides)
+void HostCopy::copy(const void *src, void *dst, size_t rows, const std::tuple<int, int, int> &strides)
 {
     using namespace std;
     unique_ptr<size_t[]> indexes(new size_t[rows]);
@@ -33,17 +33,6 @@ template<> void copy<PassiveBuffer, HeapBuffer, std::tuple<int, int, int>>(const
         auto [cols, s, d] = strides;
         memcpy(static_cast<uint8_t *>(dst) + n * d, static_cast<const uint8_t *>(src) + n * s, cols);
     });
-}
-
-template<> void copy<PassiveBuffer, PassiveBuffer, std::tuple<int, int, int>>(const void* src, void *dst, size_t rows, const std::tuple<int, int, int> &strides)
-{
-    copy<PassiveBuffer, HeapBuffer, std::tuple<int, int, int>>(src, dst, rows, strides);
-}
-
-
-template<> void copy<HeapBuffer, PassiveBuffer>(const void* src, void *dst, size_t size)
-{
-    std::memcpy(dst, src, size);
 }
 
 }

@@ -5,8 +5,8 @@ project(variadic-tensors LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-add_compile_options(-fsanitize=address)
-add_link_options(-fsanitize=address)
+# add_compile_options(-fsanitize=address)
+# add_link_options(-fsanitize=address)
 
 
 # Library
@@ -31,7 +31,7 @@ target_include_directories(${PROJECT_NAME}
     PUBLIC
         "$<INSTALL_INTERFACE:include/>")
 
-target_link_libraries(${PROJECT_NAME}
+target_link_libraries(${PROJECT_NAME} PUBLIC
     tbb
     CUDA::cudart CUDA::nppc CUDA::nppig)
 
