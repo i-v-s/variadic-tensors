@@ -1,4 +1,5 @@
 #include <cuda_runtime.h>
+#include <nppdefs.h>
 
 #include "./cuda.h"
 

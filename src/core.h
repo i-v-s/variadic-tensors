@@ -165,6 +165,7 @@ template<typename Pointer, class Enable = void> struct GetBufferTypeT;
 /************* Actions *************/
 
 template<BufferLike SrcBuffer, BufferLike DstBuffer> struct Copy;
+template<BufferLike Buffer> struct Resize;
 
 struct HostCopy
 {
@@ -327,6 +328,28 @@ public:
     {
         AllocatedTensor<Buffer, Item, RemoveStride<Axes>...> result(shape);
         result.copyFrom(*this);
+        return result;
+    }
+
+    template<int... ids>
+    auto resize(Integer auto... sizes)
+    {
+        using namespace std;
+        static_assert(sizeof...(ids) == sizeof...(sizes), "Count of ids must be equal to count of sizes");
+        static_assert(((findIndex<ids, Axes::id...> >= 0) && ...), "Specified non-existent axis id");
+        constexpr auto indices = make_tuple(findIndex<Axes::id, ids...>...);
+        auto sizesTuple = make_tuple(sizes...);
+
+        auto newShape = tupleMap<true>([&indices, &sizesTuple] <int i> (Integer auto size) {
+            constexpr int idx = get<i>(indices);
+            if constexpr(idx >= 0)
+                return get<idx>(sizesTuple);
+            else
+                return size;
+        }, zip(shape.tuple()));
+        // TODO: Fix axes
+        AllocatedTensor<GetBuffer<Pointer>, Item, RemoveStride<Axes>...> result(newShape);
+
         return result;
     }
 

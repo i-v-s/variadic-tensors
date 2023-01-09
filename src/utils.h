@@ -254,9 +254,32 @@ template<bool... bs>
 using TrueSeq = typename TrueSeqT<0, bs...>::Type;
 
 
-/************* TupleReduce *************/
+/************* findIndex *************/
+
+template<int p, int i, int... args> struct FindIndexT;
+
+template<int p, int i, int arg, int... args>
+struct FindIndexT<p, i, arg, args...>
+{
+    static constexpr int value = (p == arg) ? i : FindIndexT<p, i + 1, args...>::value;
+};
+
+template<int p, int i>
+struct FindIndexT<p, i> { static constexpr int value = -1; };
+
+template<int p, int... args>
+inline constexpr int findIndex = FindIndexT<p, 0, args...>::value;
+
+
+/************* reduce & map *************/
 
 template<typename Fn, typename Value>
+auto reduce(Fn fn, Value value) noexcept
+{
+    return value;
+}
+
+template<int i, typename Fn, typename Value>
 auto reduce(Fn fn, Value value) noexcept
 {
     return value;
@@ -269,6 +292,30 @@ auto reduce(Fn &&fn, const Value value, Arg arg, Args... args) noexcept
         fn,
         std::apply([&] (auto... args) { return fn(value, args...); }, arg),
         args...);
+}
+
+template<int i, typename Fn, typename Value, typename Arg, typename... Args>
+auto reduce(Fn &&fn, const Value value, Arg arg, Args... args) noexcept
+{
+    return reduce<i + 1>(
+        fn,
+        std::apply([&] (auto... args) { return fn.template operator()<i>(value, args...); }, arg),
+        args...);
+}
+
+template<bool enumerated = false, typename Fn, typename... Args>
+auto argsMap(Fn &&fn, Args... args) noexcept
+{
+    if constexpr(enumerated)
+        return reduce<0>([&] <int i> (auto value, auto... args) { return pushBack(value, fn.template operator()<i>(args...)); }, std::make_tuple(), args...);
+    else
+        return reduce([&] (auto value, auto... args) { return pushBack(value, fn(args...)); }, std::make_tuple(), args...);
+}
+
+template<bool enumerated = false, typename Fn, typename Tuple>
+auto tupleMap(Fn &&fn, const Tuple &tuple) noexcept
+{
+    return std::apply([&] (auto... args) { return argsMap<enumerated>(fn, args...); }, tuple);
 }
 
 
