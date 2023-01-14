@@ -1,8 +1,11 @@
+#include <string>
 #include <cuda_runtime.h>
 #include <nppdefs.h>
+#include <nppi_geometry_transforms.h>
 
 #include "./cuda.h"
 
+using namespace std;
 
 namespace vt {
 
@@ -73,6 +76,19 @@ void CudaHostCopy::copy(const void *src, void *dst, size_t rows, const std::tupl
     auto result = cudaMemcpy2D(dst, d, src, s, width, rows, cudaMemcpyDeviceToHost);
     if (result != cudaSuccess)
         throw std::runtime_error("cudaMemcpy2D DeviceToHost error");
+}
+
+void CudaResize::resize(const uint8_t *src, uint8_t *dst,
+                        const std::tuple<int, int, IntConst<3> > &srcShape, const std::tuple<int, int, IntConst<3> > &dstShape,
+                        const std::tuple<int, IntConst<3>, IntConst<1> > &srcStrides, const std::tuple<int, IntConst<3>, IntConst<1> > &dstStrides)
+{
+    auto [sh, sw, _1] = srcShape;
+    auto [dh, dw, _2] = dstShape;
+    NppiRect srcRoi{0, 0, sw, sh}, dstRoi{0, 0, dw, dh};
+    auto status = nppiResize_8u_C3R(src, get<0>(srcStrides), {sw, sh}, srcRoi,
+                                    dst, get<0>(dstStrides), {dw, dh}, dstRoi, NPPI_INTER_LINEAR);
+    if (status != 0)
+        throw std::runtime_error("nppiResize_8u_C3R error" + to_string(status));
 }
 
 }

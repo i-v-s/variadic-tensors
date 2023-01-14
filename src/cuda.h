@@ -52,10 +52,19 @@ struct CudaHostCopy{
 };
 
 template<HostBufferLike Src, CudaBufferLike Dst>
-struct Copy<Src, Dst> : HostCudaCopy {};
+struct Copy<Src, Dst> : public HostCudaCopy {};
 
 template<CudaBufferLike Src, HostBufferLike Dst>
-struct Copy<Src, Dst> : CudaHostCopy {};
+struct Copy<Src, Dst> : public CudaHostCopy {};
+
+struct CudaResize{
+    static void resize(const uint8_t* src, uint8_t *dst,
+                       const std::tuple<int, int, IntConst<3>> &srcShape, const std::tuple<int, int, IntConst<3>> &dstShape,
+                       const std::tuple<int, IntConst<3>, IntConst<1>> &srcStrides, const std::tuple<int, IntConst<3>, IntConst<1>> &dstStrides);
+};
+
+template<CudaBufferLike Buffer>
+struct Resize<Buffer> : public CudaResize {};
 
 }
 

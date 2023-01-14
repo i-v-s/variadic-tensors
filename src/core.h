@@ -215,6 +215,7 @@ class Tensor
 {
 public:
     using Pointer = Pointer_;
+    using Buffer = GetBuffer<Pointer>;
     using SST = ShapeStridesTuple<Axes...>;
     using Ids = std::integer_sequence<int, Axes::id...>;
     using Item = GetItem<Pointer>;
@@ -331,8 +332,18 @@ public:
         return result;
     }
 
+    template<typename Dst>
+    void resizeTo(Dst &result) const
+    {
+        static_assert(std::is_same_v<Item, typename Dst::Item>, "Tensor item types must be the same");
+        static_assert(Buffer::device == Dst::Buffer::device, "Tensors must be on the same device");
+        Resize<GetBuffer<typename Dst::Pointer>>::resize(
+                    static_cast<const Item *>(rawPointer()), static_cast<Item *>(result.rawPointer()),
+                    shape, result.shape, strides, result.strides);
+    }
+
     template<int... ids>
-    auto resize(Integer auto... sizes)
+    auto resize(Integer auto... sizes) const
     {
         using namespace std;
         static_assert(sizeof...(ids) == sizeof...(sizes), "Count of ids must be equal to count of sizes");
@@ -348,8 +359,9 @@ public:
                 return size;
         }, zip(shape.tuple()));
         // TODO: Fix axes
-        AllocatedTensor<GetBuffer<Pointer>, Item, RemoveStride<Axes>...> result(newShape);
-
+        using Dst = AllocatedTensor<GetBuffer<Pointer>, Item, RemoveStride<Axes>...>;
+        Dst result(newShape);
+        resizeTo(result);
         return result;
     }
 
@@ -367,6 +379,7 @@ public:
 
     const ShapeType shape;
     const StridesType strides;
+    constexpr static bool contiguous = (Axes::contiguous && ...);
 protected:
 
     size_t calcOffset(Integer auto... indices)
