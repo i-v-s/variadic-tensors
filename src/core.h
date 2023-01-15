@@ -164,6 +164,12 @@ public:
     Tensor(Tensor &tensor) = default;
     Tensor &operator=(Tensor &tensor) = default;
 
+    template<typename Other>
+    static Tensor from(Other &item)
+    {
+        return Import<Other, Tensor>::create(item);
+    }
+
     template<typename Idx>
     auto operator[](Idx idx) noexcept
     {

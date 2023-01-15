@@ -4,18 +4,49 @@
 
 #include "./buffers.h"
 #include "./actions.h"
+#include "./axis.h"
+#include "./core.h"
 
 namespace vt {
 
-struct ExportCV
+template<typename Item> struct cvTypeT;
+template<> struct cvTypeT<uint8_t> { constexpr static int value = CV_8U; };
+template<> struct cvTypeT<int8_t> { constexpr static int value = CV_8S; };
+template<> struct cvTypeT<uint16_t> { constexpr static int value = CV_16U; };
+template<> struct cvTypeT<int16_t> { constexpr static int value = CV_16S; };
+template<> struct cvTypeT<int32_t> { constexpr static int value = CV_32S; };
+template<> struct cvTypeT<float> { constexpr static int value = CV_32F; };
+template<> struct cvTypeT<double> { constexpr static int value = CV_64F; };
+template<> struct cvTypeT<cv::float16_t> { constexpr static int value = CV_16F; };
+
+template<typename Item, int channels>
+static constexpr int cvType = CV_MAKETYPE(cvTypeT<Item>::value, channels);
+
+template<HostBufferLike Buffer> struct Export<Buffer, cv::Mat>
 {
-    static cv::Mat create(uint8_t *ptr,
-                          const std::tuple<int, int, std::integral_constant<int, 3>> &shape,
-                          const std::tuple<int, std::integral_constant<int, 3>, std::integral_constant<int, 1>> &strides);
+    template<typename Item, int channels>
+    static cv::Mat create(Item *ptr,
+                          const std::tuple<int, int, std::integral_constant<int, channels> > &shape,
+                          const std::tuple<int, std::integral_constant<int, channels>, std::integral_constant<int, 1> > &strides)
+    {
+        static_assert(channels >= 1 && channels <= 4, "Wrong channel number");
+        return cv::Mat(get<0>(shape), get<1>(shape), cvType<Item, channels>, ptr, get<0>(strides));
+    }
 };
 
-template<HostBufferLike Buffer>
-struct Export<Buffer, cv::Mat> : public ExportCV {};
+
+template<typename Item, int H, int W, int C, int channels>
+struct Import<cv::Mat, PassiveTensor<Item, vt::Axis<H>, vt::Axis<W>, vt::Axis<C, channels>>>
+{
+    static_assert(channels >= 1 && channels <= 4, "Wrong channel number");
+    using Result = PassiveTensor<uint8_t, vt::Axis<H>, vt::Axis<W>, vt::Axis<C, channels>>;
+    static Result create(cv::Mat &image)
+    {
+        if (image.type() != cvType<Item, channels>)
+            throw std::runtime_error("cv::Mat type mismatch");
+        return Result(image.data, image.rows, image.cols);
+    }
+};
 
 }
 #endif // OCV_H

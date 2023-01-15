@@ -40,7 +40,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
     CUDA::cudart CUDA::nppc CUDA::nppig)
 
 if(OpenCV_core_FOUND)
-    target_sources(${PROJECT_NAME} PRIVATE src/ocv.h src/ocv.cpp)
+    target_sources(${PROJECT_NAME} PRIVATE src/ocv.h)
     target_link_libraries(${PROJECT_NAME} PUBLIC opencv_core)
 endif()
 
