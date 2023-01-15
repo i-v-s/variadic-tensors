@@ -15,6 +15,8 @@
 #include "./utils.h"
 #include "./strides.h"
 #include "./slice.h"
+#include "./buffers.h"
+#include "./actions.h"
 
 namespace vt {
 
@@ -40,70 +42,6 @@ std::ostream& operator<<(std::ostream &stream, const std::tuple<Arg, Args...> &t
     stream << "]";
     return stream;
 }
-
-
-/************* Buffers *************/
-
-enum class Device
-{
-    Host,
-    Cuda,
-    OpenCL
-};
-
-class PassiveBuffer {
-public:
-    constexpr static Device device = Device::Host;
-};
-
-template<class T>
-concept BufferLike =
-        (std::is_constructible_v<T, size_t> && !std::copyable<T>) || std::is_same_v<T, PassiveBuffer>;
-
-template<class T>
-concept HostBufferLike =
-        BufferLike<T> && T::device == Device::Host;
-
-template<class T>
-concept CudaBufferLike =
-        BufferLike<T> && T::device == Device::Cuda;
-
-template<typename Derived>
-class Buffer
-{
-public:
-    constexpr static Device device = Device::Host;
-    Buffer() = delete;
-    Buffer(size_t size) : memory(Derived::malloc(size), &Derived::dealloc) {}
-
-    Buffer(const Buffer &) = delete;
-    Buffer(Buffer &&) = delete;
-    Buffer &operator=(const Buffer &) = delete;
-    Buffer &operator=(Buffer &&) = delete;
-    operator PassiveBuffer(){ return {}; }
-
-    void *get() noexcept { return memory.get(); }
-    const void *get() const noexcept { return memory.get(); }
-private:
-    std::unique_ptr<void, void (*)(void *)> memory;
-};
-
-class HeapBuffer
-{
-public:
-    constexpr static Device device = Device::Host;
-    HeapBuffer(size_t size);
-
-    HeapBuffer(const HeapBuffer &) = delete;
-    HeapBuffer(HeapBuffer &&) = delete;
-    HeapBuffer &operator=(const HeapBuffer &) = delete;
-    HeapBuffer &operator=(HeapBuffer &&) = delete;
-
-    void *get() noexcept;
-    const void *get() const noexcept;
-private:
-    std::unique_ptr<uint8_t[]> memory;
-};
 
 
 /************* Pointers *************/
@@ -160,21 +98,6 @@ template<typename Pointer, class Enable = void> struct GetBufferTypeT;
 
     template<typename Pointer>
     using GetBuffer = typename GetBufferTypeT<Pointer>::Type;
-
-
-/************* Actions *************/
-
-template<BufferLike SrcBuffer, BufferLike DstBuffer> struct Copy;
-template<BufferLike Buffer> struct Resize;
-
-struct HostCopy
-{
-    static void copy(const void* src, void *dst, size_t size);
-    static void copy(const void* src, void *dst, size_t rows, const std::tuple<int, int, int> &strides);
-};
-
-template<HostBufferLike Src, HostBufferLike Dst>
-struct Copy<Src, Dst> : HostCopy {};
 
 
 /************* Tensors *************/
@@ -330,6 +253,22 @@ public:
         AllocatedTensor<Buffer, Item, RemoveStride<Axes>...> result(shape);
         result.copyFrom(*this);
         return result;
+    }
+
+    template<typename Other>
+    Other to() const
+    {
+        AllocatedTensor<Buffer, Item, RemoveStride<Axes>...> result(shape);
+        result.copyFrom(*this);
+        return Export<Buffer, Other>::create(static_cast<const Item *>(rawPointer()), shape.tuple(), strides);
+    }
+
+    template<typename Other>
+    Other map()
+    {
+        AllocatedTensor<Buffer, Item, RemoveStride<Axes>...> result(shape);
+        result.copyFrom(*this);
+        return Export<Buffer, Other>::create(static_cast<Item *>(rawPointer()), shape.tuple(), strides);
     }
 
     template<typename Dst>
