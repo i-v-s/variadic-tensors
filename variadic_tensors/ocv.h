@@ -35,8 +35,8 @@ template<HostBufferLike Buffer> struct Export<Buffer, cv::Mat>
 };
 
 
-template<typename Item, int H, int W, int C, int channels>
-struct Import<cv::Mat, PassiveTensor<Item, vt::Axis<H>, vt::Axis<W>, vt::Axis<C, channels>>>
+template<template<typename... Args> typename Tensor, typename Item, int H, int W, int C, int channels>
+struct Import<cv::Mat, Tensor<Item *, vt::Axis<H>, vt::Axis<W>, vt::Axis<C, channels>>>
 {
     static_assert(channels >= 1 && channels <= 4, "Wrong channel number");
     using Result = PassiveTensor<uint8_t, vt::Axis<H>, vt::Axis<W>, vt::Axis<C, channels>>;

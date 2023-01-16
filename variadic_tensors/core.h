@@ -134,7 +134,7 @@ public:
 };
 
 template<typename Pointer_, AxisLike... Axes>
-class Tensor
+class ConstTensor
 {
 public:
     using Pointer = Pointer_;
@@ -145,75 +145,51 @@ public:
     using ShapeType = Shape<typename SST::Shape>;
     using StridesType = typename SST::Strides;
 
-    Tensor(Pointer pointer, const ShapeType &shape) :
+    ConstTensor(Pointer pointer, const ShapeType &shape) :
         shape(shape),
         strides(SST::buildStrides(shape)),
         pointer(pointer)
     {}
 
-    Tensor(Pointer pointer, const ShapeType &shape, const StridesType &strides) :
+    ConstTensor(Pointer pointer, const ShapeType &shape, const StridesType &strides) :
         shape(shape),
         strides(strides),
         pointer(pointer)
     {}
 
     template<std::integral... Args>
-    Tensor(Pointer pointer, Args... args) : Tensor(pointer, SST::build(args...))
+    ConstTensor(Pointer pointer, Args... args) : ConstTensor(pointer, SST::build(args...))
     {}
 
-    Tensor(Tensor &tensor) = default;
-    Tensor &operator=(Tensor &tensor) = default;
+    ConstTensor(const ConstTensor &tensor) = default;
+    ConstTensor &operator=(const ConstTensor &tensor) = default;
 
-    template<typename Other>
-    static Tensor from(Other &item)
+    template<typename Other> static ConstTensor from(Other &item)
     {
-        return Import<Other, Tensor>::create(item);
+        return Import<Other, ConstTensor>::create(item);
     }
 
     template<typename Idx>
-    auto operator[](Idx idx) noexcept
+    auto operator[](Idx idx) const
     {
         return at(idx);
     }
 
     template<typename... Slices>
-    auto at(Slices && ... args)
+    auto at(Slices && ... args) const
     {
         using namespace std;
         auto [offset, items] = calcAt(forward<Slices>(args)...);
         if constexpr(tuple_size_v<decltype(items)> == 0) {
-            return Reference(pointer + offset);
+            return ConstReference(pointer + offset);
         } else {
             auto [shape, strides, axes] = applyZip(items);
             auto ptr = pointer + offset;
-            using NewTensor = Apply<Tensor, decltype(pushFront(ptr, axes))>;
+            using NewTensor = Apply<ConstTensor, decltype(pushFront(ptr, axes))>;
             static_assert(is_convertible_v<decltype(shape), typename NewTensor::ShapeType>, "Wrong shape deduced");
             static_assert(is_convertible_v<decltype(strides), typename NewTensor::StridesType>, "Wrong strides deduced");
             return NewTensor(ptr, shape, strides);
         }
-    }
-
-    template<typename Other>
-    operator Tensor<Other, Axes...>() const
-    {
-        Other result(shape);
-        return result;
-    }
-
-    template<typename OtherPtr, AxisLike... OtherAxes>
-    void copyFrom(const Tensor<OtherPtr, OtherAxes...> &other)
-    {
-        using namespace std;
-        static_assert(is_same_v<Item, GetItem<OtherPtr>>, "Item types must be the same");
-        static_assert(is_same_v<Ids, typename Tensor<OtherPtr, OtherAxes...>::Ids>, "Tensor dims must be the same");
-        static_assert(((Axes::dynamic || OtherAxes::dynamic || Axes::size == OtherAxes::size) && ...), "Tensor shapes must be the same");
-        assert(shape == other.shape);
-
-        auto cs = commonStrides<sizeof(Item)>(make_tuple(BoolConst<Axes::contiguous && OtherAxes::contiguous>() ...), shape.tuple(), other.strides, strides);
-        size_t size = get<0>(cs);
-        apply([this, size, &other] (auto... args) {
-            Copy<GetBuffer<OtherPtr>, GetBuffer<Pointer>>::copy(other.rawPointer(), rawPointer(), size, args...);
-        }, get<1>(cs));
     }
 
     template<BufferLike Buffer>
@@ -274,9 +250,8 @@ public:
     }
 
     const void *rawPointer() const noexcept { return pointer; }
-    void *rawPointer() noexcept { return pointer; }
 
-    friend inline std::ostream& operator<<(std::ostream &stream, Tensor &t) noexcept
+    friend inline std::ostream& operator<<(std::ostream &stream, const ConstTensor &t) noexcept
     {
         stream << "Tensor(";
         ((stream << Axes()), ...);
@@ -334,7 +309,7 @@ protected:
         }, zip<true>(slices2));
     }
 
-    Tensor(Pointer pointer, typename SST::Pair && sst) :
+    ConstTensor(Pointer pointer, typename SST::Pair && sst) :
         shape(sst.first),
         strides(sst.second),
         pointer(pointer)
@@ -353,6 +328,82 @@ protected:
     }
 
     Pointer pointer;
+};
+
+template<typename Pointer, AxisLike... Axes>
+class Tensor: public ConstTensor<Pointer, Axes...>
+{
+public:
+    using Const = ConstTensor<Pointer, Axes...>;
+    using ShapeType = typename Const::ShapeType;
+    using StridesType = typename Const::StridesType;
+    using Item = typename Const::Item;
+    using Ids = typename Const::Ids;
+
+    Tensor(Pointer pointer, const ShapeType &shape) :
+        Const(pointer, shape)
+    {}
+
+    Tensor(Pointer pointer, const  ShapeType &shape, const StridesType &strides) :
+        Const(pointer, shape, strides)
+    {}
+
+    template<std::integral... Args>
+    Tensor(Pointer pointer, Args... args) :
+        Const(pointer, Const::SST::build(std::forward<Args>(args)...))
+    {}
+
+    Tensor(Tensor &tensor) = default;
+    Tensor &operator=(Tensor &tensor) = default;
+
+    template<typename Other> static Tensor from(Other &item)
+    {
+        return Import<Other, Tensor>::create(item);
+    }
+
+    using Const::operator[];
+
+    template<typename Idx> auto operator[](Idx idx)
+    {
+        return at(idx);
+    }
+
+    using Const::at;
+
+    template<typename... Slices>
+    auto at(Slices && ... args)
+    {
+        using namespace std;
+        auto [offset, items] = Const::calcAt(forward<Slices>(args)...);
+        if constexpr(tuple_size_v<decltype(items)> == 0) {
+            return Reference(Const::pointer + offset);
+        } else {
+            auto [shape, strides, axes] = applyZip(items);
+            auto ptr = Const::pointer + offset;
+            using NewTensor = Apply<Tensor, decltype(pushFront(ptr, axes))>;
+            static_assert(is_convertible_v<decltype(shape), typename NewTensor::ShapeType>, "Wrong shape deduced");
+            static_assert(is_convertible_v<decltype(strides), typename NewTensor::StridesType>, "Wrong strides deduced");
+            return NewTensor(ptr, shape, strides);
+        }
+    }
+
+    template<typename OtherPtr, AxisLike... OtherAxes>
+    void copyFrom(const ConstTensor<OtherPtr, OtherAxes...> &other)
+    {
+        using namespace std;
+        static_assert(is_same_v<Item, GetItem<OtherPtr>>, "Item types must be the same");
+        static_assert(is_same_v<Ids, typename ConstTensor<OtherPtr, OtherAxes...>::Ids>, "Tensor dims must be the same");
+        static_assert(((Axes::dynamic || OtherAxes::dynamic || Axes::size == OtherAxes::size) && ...), "Tensor shapes must be the same");
+        assert(Const::shape == other.shape);
+
+        auto cs = commonStrides<sizeof(Item)>(make_tuple(BoolConst<Axes::contiguous && OtherAxes::contiguous>() ...), Const::shape.tuple(), other.strides, Const::strides);
+        size_t size = get<0>(cs);
+        apply([this, size, &other] (auto... args) {
+            Copy<GetBuffer<OtherPtr>, GetBuffer<Pointer>>::copy(other.rawPointer(), rawPointer(), size, args...);
+        }, get<1>(cs));
+    }
+
+    void *rawPointer() noexcept { return Const::pointer; }
 };
 
 template<typename Item, typename... Args>
