@@ -176,48 +176,11 @@ public:
         return at(idx);
     }
 
-    template<int I, bool C, typename Result>
-    struct TensorInfo
-    {
-        static constexpr int index = I;
-        static constexpr bool ctg = C;
-        size_t offset = 0;
-        Result result;
-    };
-
     template<typename... Slices>
-    auto at(Slices... args)
+    auto at(Slices && ... args)
     {
         using namespace std;
-        constexpr size_t dims = sizeof...(Axes);
-        auto slices1 = make_tuple(Slice(args)...);
-        constexpr auto axes = make_tuple(Axes()...);
-        constexpr size_t news = countIf([] (const auto &s) { return s.kind == ST::New; }, slices1);
-        auto slices2 = tupleFill<dims + news>(Slice(), slices1);
-        auto [offset, items] = apply([this, &axes] (auto... args) {
-            return reduce([this, &axes] (const auto &value, auto slice) {
-                constexpr int index = value.index;
-                auto &size = get<index>(shape);
-                auto &stride = get<index>(strides);
-                auto &axis = get<index>(axes);
-                if constexpr (slice.kind == ST::Index) {
-                    assert(slice.end >= 0 && slice.end < size);
-                    return TensorInfo<index - 1, axis.size == 1 && value.ctg, decltype(value.result)>{value.offset + product(slice.end, stride), value.result};
-                } else if constexpr(slice.kind == ST::None) {
-                    Axis<axis.id, axis.size, value.ctg ? Auto : axis.stride> newAxis;
-                    auto result = pushFront(make_tuple(size, stride, newAxis), value.result);
-                    return TensorInfo<index - 1, axis.contiguous, decltype(result)>{value.offset, result};
-                } else if constexpr(slice.kind == ST::New) {
-                    assert(!"!!!");
-                    return TensorInfo{value.offset, pushFront(make_tuple(1, 0, Axis<0, 1>()), value.result)};
-                } else if constexpr(slice.kind == ST::Slice) {
-                    auto size = slice.size();
-                    Axis<axis.id, is_same_v<decltype(size), int> ? Dynamic : static_cast<int>(size), value.ctg ? axis.stride : Dynamic> newAxis;
-                    auto result = pushFront(make_tuple(size, product(stride, slice.step), newAxis), value.result);
-                    return TensorInfo<index - 1, false /*?*/, decltype(result)>{value.offset + product(slice.begin, stride), result};
-                }
-            }, TensorInfo<dims - 1, true, tuple<>>(), args...);
-        }, zip<true>(slices2));
+        auto [offset, items] = calcAt(forward<Slices>(args)...);
         if constexpr(tuple_size_v<decltype(items)> == 0) {
             return Reference(pointer + offset);
         } else {
@@ -327,16 +290,48 @@ public:
     constexpr static bool contiguous = (Axes::contiguous && ...);
 protected:
 
-    size_t calcOffset(Integer auto... indices)
+    template<int I, bool C, typename Result>
+    struct TensorInfo
+    {
+        static constexpr int index = I;
+        static constexpr bool ctg = C;
+        size_t offset = 0;
+        Result result;
+    };
+
+    template<typename... Slices>
+    auto calcAt(Slices && ... args) const
     {
         using namespace std;
-        return apply([] (const auto& ... args) {
-            return (apply([] (Integer auto index, Integer auto size, Integer auto stride) {
-                if (index < 0 || index > size)
-                    throw out_of_range("Index out of range");
-                return index * stride;
-            }, args) + ...);
-        }, zip(make_tuple(indices...), shape.tuple(), strides));
+        constexpr size_t dims = sizeof...(Axes);
+        auto slices1 = make_tuple(Slice(args)...);
+        constexpr auto axes = make_tuple(Axes()...);
+        constexpr size_t news = countIf([] (const auto &s) { return s.kind == ST::New; }, slices1);
+        auto slices2 = tupleFill<dims + news>(Slice(), slices1);
+        return apply([this, &axes] (auto... args) {
+            return reduce([this, &axes] (const auto &value, auto slice) {
+                constexpr int index = value.index;
+                auto &size = get<index>(shape);
+                auto &stride = get<index>(strides);
+                auto &axis = get<index>(axes);
+                if constexpr (slice.kind == ST::Index) {
+                    assert(slice.end >= 0 && slice.end < size);
+                    return TensorInfo<index - 1, axis.size == 1 && value.ctg, decltype(value.result)>{value.offset + product(slice.end, stride), value.result};
+                } else if constexpr(slice.kind == ST::None) {
+                    Axis<axis.id, axis.size, value.ctg ? Auto : axis.stride> newAxis;
+                    auto result = pushFront(make_tuple(size, stride, newAxis), value.result);
+                    return TensorInfo<index - 1, axis.contiguous, decltype(result)>{value.offset, result};
+                } else if constexpr(slice.kind == ST::New) {
+                    assert(!"!!!");
+                    return TensorInfo{value.offset, pushFront(make_tuple(1, 0, Axis<0, 1>()), value.result)};
+                } else if constexpr(slice.kind == ST::Slice) {
+                    auto size = slice.size();
+                    Axis<axis.id, is_same_v<decltype(size), int> ? Dynamic : static_cast<int>(size), value.ctg ? axis.stride : Dynamic> newAxis;
+                    auto result = pushFront(make_tuple(size, product(stride, slice.step), newAxis), value.result);
+                    return TensorInfo<index - 1, false /*?*/, decltype(result)>{value.offset + product(slice.begin, stride), result};
+                }
+            }, TensorInfo<dims - 1, true, tuple<>>(), args...);
+        }, zip<true>(slices2));
     }
 
     Tensor(Pointer pointer, typename SST::Pair && sst) :

@@ -14,24 +14,23 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(CUDAToolkit REQUIRED)
 find_package(OpenCV OPTIONAL_COMPONENTS core)
 
-
 add_library(${PROJECT_NAME})
 
 target_sources(${PROJECT_NAME} PRIVATE
-    src/axis.h
-    src/utils.h
-    src/shape.h
-    src/strides.h
-    src/slice.h
-    src/buffers.h
-    src/actions.h
-    src/core.h     src/core.cpp
-    src/cuda.h     src/cuda.cpp
+    variadic_tensors/axis.h
+    variadic_tensors/utils.h
+    variadic_tensors/shape.h
+    variadic_tensors/strides.h
+    variadic_tensors/slice.h
+    variadic_tensors/buffers.h
+    variadic_tensors/actions.h
+    variadic_tensors/core.h     src/core.cpp
+    variadic_tensors/cuda.h     src/cuda.cpp
 )
 
 target_include_directories(${PROJECT_NAME}
     PRIVATE
-        "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/src/>"
+        "$<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/variadic_tensors/>"
     PUBLIC
         "$<INSTALL_INTERFACE:include/>")
 
@@ -40,9 +39,39 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
     CUDA::cudart CUDA::nppc CUDA::nppig)
 
 if(OpenCV_core_FOUND)
-    target_sources(${PROJECT_NAME} PRIVATE src/ocv.h)
+    target_sources(${PROJECT_NAME} PRIVATE variadic_tensors/ocv.h)
     target_link_libraries(${PROJECT_NAME} PUBLIC opencv_core)
 endif()
+
+
+# Install library
+
+include(GNUInstallDirs)
+
+install(
+    TARGETS ${PROJECT_NAME}
+    EXPORT ${PROJECT_NAME}-config
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    )
+
+install(
+    EXPORT ${PROJECT_NAME}-config
+    NAMESPACE ${PROJECT_NAME}::
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME})
+
+install(DIRECTORY variadic_tensors
+        DESTINATION include)
+
+
+# Build .deb package
+
+set(CPACK_GENERATOR "DEB")
+set(CPACK_DEBIAN_PACKAGE_MAINTAINER "Igor Smirnov")
+# set(CPACK_DEBIAN_PACKAGE_DEPENDS "")
+include(CPack)
+
 
 # Application
 
