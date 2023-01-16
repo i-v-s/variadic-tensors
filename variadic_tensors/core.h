@@ -2,6 +2,7 @@
 #define VT_CORE_H
 #include <concepts>
 #include <memory>
+#include <span>
 #include <atomic>
 #include <algorithm>
 #include <functional>
@@ -190,6 +191,19 @@ public:
             static_assert(is_convertible_v<decltype(strides), typename NewTensor::StridesType>, "Wrong strides deduced");
             return NewTensor(ptr, shape, strides);
         }
+    }
+
+    auto span() const
+    {
+        using namespace std;
+        static_assert(sizeof...(Axes) == 1, "span available only for one dimensional Tensor");
+        assert(get<0>(strides) == 1);
+        const auto &size = get<0>(shape);
+        auto ptr = static_cast<const Item *>(rawPointer());
+        if constexpr(IntConstLike<decltype(size)>)
+            return std::span<Item, decltype(size)::value>(ptr);
+        else
+            return std::span<Item>(ptr, size);
     }
 
     template<BufferLike Buffer>
@@ -385,6 +399,34 @@ public:
             static_assert(is_convertible_v<decltype(strides), typename NewTensor::StridesType>, "Wrong strides deduced");
             return NewTensor(ptr, shape, strides);
         }
+    }
+
+    Tensor &operator=(const std::initializer_list<Item> items)
+    {
+        static_assert(sizeof...(Axes) == 1, "= available only for one dimensional Tensor");
+        assert(items.size() == get<0>(Const::shape));
+        auto ptr = static_cast<Item *>(rawPointer());
+        auto stride = get<0>(Const::strides);
+        for (const auto &item: items) {
+            *ptr = item;
+            ptr += stride;
+        }
+        return *this;
+    }
+
+    using Const::span;
+
+    auto span()
+    {
+        using namespace std;
+        static_assert(sizeof...(Axes) == 1, "span available only for one dimensional Tensor");
+        assert(get<0>(Const::strides) == 1);
+        const auto &size = get<0>(Const::shape);
+        auto ptr = static_cast<Item *>(rawPointer());
+        if constexpr(IntConstLike<decltype(size)>)
+            return std::span<Item, remove_reference_t<decltype(size)>::value>(ptr, size);
+        else
+            return std::span<Item>(ptr, size);
     }
 
     template<typename OtherPtr, AxisLike... OtherAxes>
