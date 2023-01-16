@@ -23,6 +23,7 @@ target_sources(${PROJECT_NAME} PRIVATE
     variadic_tensors/strides.h
     variadic_tensors/slice.h
     variadic_tensors/buffers.h
+    variadic_tensors/pointers.h
     variadic_tensors/actions.h
     variadic_tensors/core.h     src/core.cpp
     variadic_tensors/cuda.h     src/cuda.cpp

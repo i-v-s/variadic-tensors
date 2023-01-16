@@ -17,6 +17,7 @@
 #include "./strides.h"
 #include "./slice.h"
 #include "./buffers.h"
+#include "./pointers.h"
 #include "./actions.h"
 
 namespace vt {
@@ -43,62 +44,6 @@ std::ostream& operator<<(std::ostream &stream, const std::tuple<Arg, Args...> &t
     stream << "]";
     return stream;
 }
-
-
-/************* Pointers *************/
-
-template<BufferLike Buffer, typename Item, bool offset = true> class SharedPointer;
-
-template<BufferLike Buffer_, typename Item_>
-class SharedPointer<Buffer_, Item_, false>
-{
-public:
-    using Item = Item_;
-    using Buffer = Buffer_;
-    operator Item*() noexcept
-    {
-        return static_cast<Item *>(value->get());
-    }
-    operator Item*() const noexcept
-    {
-        return static_cast<Item *>(value->get());
-    }
-    explicit SharedPointer(size_t size) :
-        value(new Buffer(size))
-    {}
-    SharedPointer(SharedPointer && other) :
-        value(std::move(other.value))
-    {}
-    SharedPointer(const SharedPointer & other) :
-        value(other.value)
-    {}
-protected:
-    std::shared_ptr<Buffer> value;
-};
-
-/************* GetItem, GetBuffer *************/
-
-template<typename Pointer, class Enable = void> struct GetItemTypeT;
-
-    template<typename Pointer>
-    struct GetItemTypeT<Pointer, typename std::enable_if_t<std::is_pointer_v<Pointer>>> { using Type = std::remove_pointer_t<Pointer>; };
-
-    template<typename Pointer>
-    struct GetItemTypeT<Pointer, typename std::enable_if_t<!std::is_pointer_v<Pointer>>> { using Type = typename Pointer::Item; };
-
-    template<typename Pointer>
-    using GetItem = typename GetItemTypeT<Pointer>::Type;
-
-template<typename Pointer, class Enable = void> struct GetBufferTypeT;
-
-    template<typename Pointer>
-    struct GetBufferTypeT<Pointer, typename std::enable_if_t<std::is_pointer_v<Pointer>>> { using Type = PassiveBuffer; };
-
-    template<typename Pointer>
-    struct GetBufferTypeT<Pointer, typename std::enable_if_t<!std::is_pointer_v<Pointer>>> { using Type = typename Pointer::Buffer; };
-
-    template<typename Pointer>
-    using GetBuffer = typename GetBufferTypeT<Pointer>::Type;
 
 
 /************* Tensors *************/
@@ -145,6 +90,7 @@ public:
     using Item = GetItem<Pointer>;
     using ShapeType = Shape<typename SST::Shape>;
     using StridesType = typename SST::Strides;
+    static constexpr bool onHost = HostBufferLike<Buffer>;
 
     ConstTensor(Pointer pointer, const ShapeType &shape) :
         shape(shape),
@@ -196,6 +142,7 @@ public:
     auto span() const
     {
         using namespace std;
+        static_assert(onHost, "Tensor must be located on host memory");
         static_assert(sizeof...(Axes) == 1, "span available only for one dimensional Tensor");
         assert(get<0>(strides) == 1);
         const auto &size = get<0>(shape);
@@ -220,14 +167,6 @@ public:
         AllocatedTensor<Buffer, Item, RemoveStride<Axes>...> result(shape);
         result.copyFrom(*this);
         return Export<Buffer, Other>::create(static_cast<const Item *>(rawPointer()), shape.tuple(), strides);
-    }
-
-    template<typename Other>
-    Other map()
-    {
-        AllocatedTensor<Buffer, Item, RemoveStride<Axes>...> result(shape);
-        result.copyFrom(*this);
-        return Export<Buffer, Other>::create(static_cast<Item *>(rawPointer()), shape.tuple(), strides);
     }
 
     template<typename Dst>
@@ -341,7 +280,7 @@ protected:
         return bufferSize(ShapeType(tupleSlice<0, sizeof...(Axes)>(SST::build(args...).first)));
     }
 
-    Pointer pointer;
+    mutable Pointer pointer;
 };
 
 template<typename Pointer, AxisLike... Axes>
@@ -349,6 +288,7 @@ class Tensor: public ConstTensor<Pointer, Axes...>
 {
 public:
     using Const = ConstTensor<Pointer, Axes...>;
+    using Buffer = typename Const::Buffer;
     using ShapeType = typename Const::ShapeType;
     using StridesType = typename Const::StridesType;
     using Item = typename Const::Item;
@@ -373,6 +313,14 @@ public:
     template<typename Other> static Tensor from(Other &item)
     {
         return Import<Other, Tensor>::create(item);
+    }
+
+    template<typename Other>
+    Other map()
+    {
+        AllocatedTensor<Buffer, Item, RemoveStride<Axes>...> result(Const::shape);
+        result.copyFrom(*this);
+        return Export<Buffer, Other>::create(static_cast<Item *>(rawPointer()), Const::shape.tuple(), Const::strides);
     }
 
     using Const::operator[];
@@ -401,8 +349,9 @@ public:
         }
     }
 
-    Tensor &operator=(const std::initializer_list<Item> items)
+    Tensor &operator=(std::initializer_list<Item> items)
     {
+        static_assert(Const::onHost, "Tensor must be located on host memory");
         static_assert(sizeof...(Axes) == 1, "= available only for one dimensional Tensor");
         assert(items.size() == get<0>(Const::shape));
         auto ptr = static_cast<Item *>(rawPointer());
@@ -419,6 +368,7 @@ public:
     auto span()
     {
         using namespace std;
+        static_assert(Const::onHost, "Tensor must be located on host memory");
         static_assert(sizeof...(Axes) == 1, "span available only for one dimensional Tensor");
         assert(get<0>(Const::strides) == 1);
         const auto &size = get<0>(Const::shape);
