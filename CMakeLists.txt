@@ -8,11 +8,22 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # add_compile_options(-fsanitize=address)
 # add_link_options(-fsanitize=address)
 
+option(WITH_OPENCV "Compile with OpenCV" ON)
+option(WITH_FFMPEG "Compile with FFMPEG" ON)
 
 # Library
 
 find_package(CUDAToolkit REQUIRED)
-find_package(OpenCV OPTIONAL_COMPONENTS core)
+
+if(WITH_OPENCV)
+    find_package(OpenCV REQUIRED core)
+endif(WITH_OPENCV)
+
+if(WITH_FFMPEG)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(LIBAV REQUIRED IMPORTED_TARGET
+        libavformat)
+endif(WITH_FFMPEG)
 
 add_library(${PROJECT_NAME})
 
@@ -39,10 +50,15 @@ target_link_libraries(${PROJECT_NAME} PUBLIC
     tbb
     CUDA::cudart CUDA::nppc CUDA::nppig)
 
-if(OpenCV_core_FOUND)
+if(WITH_OPENCV)
     target_sources(${PROJECT_NAME} PRIVATE variadic_tensors/ocv.h)
     target_link_libraries(${PROJECT_NAME} PUBLIC opencv_core)
-endif()
+endif(WITH_OPENCV)
+
+if(WITH_FFMPEG)
+    target_sources(${PROJECT_NAME} PRIVATE variadic_tensors/av.h)
+    target_link_libraries(${PROJECT_NAME} PUBLIC PkgConfig::LIBAV)
+endif(WITH_FFMPEG)
 
 
 # Install library

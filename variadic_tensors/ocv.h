@@ -2,8 +2,6 @@
 #define OCV_H
 #include <opencv2/core.hpp>
 
-#include "./buffers.h"
-#include "./actions.h"
 #include "./axis.h"
 #include "./core.h"
 
@@ -20,7 +18,7 @@ template<> struct cvTypeT<double> { constexpr static int value = CV_64F; };
 template<> struct cvTypeT<cv::float16_t> { constexpr static int value = CV_16F; };
 
 template<typename Item, int channels>
-static constexpr int cvType = CV_MAKETYPE(cvTypeT<Item>::value, channels);
+static constexpr int cvType = CV_MAKETYPE(cvTypeT<std::remove_const_t<Item>>::value, channels);
 
 template<HostBufferLike Buffer> struct Export<Buffer, cv::Mat>
 {

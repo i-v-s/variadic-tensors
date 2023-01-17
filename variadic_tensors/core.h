@@ -196,10 +196,8 @@ public:
     }
 
     template<typename Other>
-    Other to() const
+    Other as() const
     {
-        AllocatedTensor<Buffer, Item, RemoveStride<Axes>...> result(shape_);
-        result.copyFrom(*this);
         return Export<Buffer, Other>::create(static_cast<const Item *>(rawPointer()), shape_.tuple(), strides_);
     }
 
@@ -358,10 +356,8 @@ public:
     }
 
     template<typename Other>
-    Other map()
+    Other as()
     {
-        AllocatedTensor<Buffer, Item, RemoveStride<Axes>...> result(Const::shape_);
-        result.copyFrom(*this);
         return Export<Buffer, Other>::create(static_cast<Item *>(rawPointer()), Const::shape_.tuple(), Const::strides_);
     }
 
