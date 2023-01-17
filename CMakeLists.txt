@@ -59,7 +59,6 @@ install(
 
 install(
     EXPORT ${PROJECT_NAME}-config
-    NAMESPACE ${PROJECT_NAME}::
     DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME})
 
 install(DIRECTORY variadic_tensors

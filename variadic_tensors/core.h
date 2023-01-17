@@ -92,15 +92,21 @@ public:
     using StridesType = typename SST::Strides;
     static constexpr bool onHost = HostBufferLike<Buffer>;
 
+    ConstTensor() :
+        shape_{},
+        strides_{},
+        pointer(nullptr)
+    {}
+
     ConstTensor(Pointer pointer, const ShapeType &shape) :
-        shape(shape),
-        strides(SST::buildStrides(shape)),
+        shape_(shape),
+        strides_(SST::buildStrides(shape)),
         pointer(pointer)
     {}
 
     ConstTensor(Pointer pointer, const ShapeType &shape, const StridesType &strides) :
-        shape(shape),
-        strides(strides),
+        shape_(shape),
+        strides_(strides),
         pointer(pointer)
     {}
 
@@ -109,7 +115,35 @@ public:
     {}
 
     ConstTensor(const ConstTensor &tensor) = default;
+
+    ConstTensor(ConstTensor && other) :
+        shape_(other.shape_),
+        strides_(other.strides_),
+        pointer(std::move(other.pointer))
+    {
+        other.pointer = nullptr;
+    }
+
     ConstTensor &operator=(const ConstTensor &tensor) = default;
+
+    ConstTensor &operator=(ConstTensor && other)
+    {
+        shape_ = other.shape_;
+        strides_ = other.strides_;
+        pointer = std::move(other.pointer);
+        other.pointer = nullptr;
+        return *this;
+    }
+
+    void reset() noexcept
+    {
+        pointer = nullptr;
+    }
+
+    bool empty() const noexcept
+    {
+        return !pointer;
+    }
 
     template<typename Other> static ConstTensor from(Other &item)
     {
@@ -144,8 +178,8 @@ public:
         using namespace std;
         static_assert(onHost, "Tensor must be located on host memory");
         static_assert(sizeof...(Axes) == 1, "span available only for one dimensional Tensor");
-        assert(get<0>(strides) == 1);
-        const auto &size = get<0>(shape);
+        assert(get<0>(strides_) == 1);
+        const auto &size = get<0>(shape_);
         auto ptr = static_cast<const Item *>(rawPointer());
         if constexpr(IntConstLike<decltype(size)>)
             return std::span<Item, decltype(size)::value>(ptr);
@@ -156,7 +190,7 @@ public:
     template<BufferLike Buffer>
     auto to() const
     {
-        AllocatedTensor<Buffer, Item, RemoveStride<Axes>...> result(shape);
+        AllocatedTensor<Buffer, Item, RemoveStride<Axes>...> result(shape_);
         result.copyFrom(*this);
         return result;
     }
@@ -164,9 +198,9 @@ public:
     template<typename Other>
     Other to() const
     {
-        AllocatedTensor<Buffer, Item, RemoveStride<Axes>...> result(shape);
+        AllocatedTensor<Buffer, Item, RemoveStride<Axes>...> result(shape_);
         result.copyFrom(*this);
-        return Export<Buffer, Other>::create(static_cast<const Item *>(rawPointer()), shape.tuple(), strides);
+        return Export<Buffer, Other>::create(static_cast<const Item *>(rawPointer()), shape_.tuple(), strides_);
     }
 
     template<typename Dst>
@@ -176,7 +210,7 @@ public:
         static_assert(Buffer::device == Dst::Buffer::device, "Tensors must be on the same device");
         Resize<GetBuffer<typename Dst::Pointer>>::resize(
                     static_cast<const Item *>(rawPointer()), static_cast<Item *>(result.rawPointer()),
-                    shape, result.shape, strides, result.strides);
+                    shape_, result.shape(), strides_, result.strides());
     }
 
     template<int... ids>
@@ -194,7 +228,7 @@ public:
                 return get<idx>(sizesTuple);
             else
                 return size;
-        }, zip(shape.tuple()));
+        }, zip(shape_.tuple()));
         // TODO: Fix axes
         using Dst = AllocatedTensor<GetBuffer<Pointer>, Item, RemoveStride<Axes>...>;
         Dst result(newShape);
@@ -208,15 +242,23 @@ public:
     {
         stream << "Tensor(";
         ((stream << Axes()), ...);
-        stream << ", shape: " << t.shape.tuple();
+        stream << ", shape: " << t.shape().tuple();
         stream << ", strides: " << t.strides;
         return stream << ")";
     }
 
-    const ShapeType shape;
-    const StridesType strides;
+    const ShapeType &shape() const noexcept { return shape_; };
+    const StridesType &strides() const noexcept { return strides_; };
+
     constexpr static bool contiguous = (Axes::contiguous && ...);
+
 protected:
+
+    ConstTensor(Pointer pointer, typename SST::Pair && sst) :
+        shape_(sst.first),
+        strides_(sst.second),
+        pointer(pointer)
+    {}
 
     template<int I, bool C, typename Result>
     struct TensorInfo
@@ -239,8 +281,8 @@ protected:
         return apply([this, &axes] (auto... args) {
             return reduce([this, &axes] (const auto &value, auto slice) {
                 constexpr int index = value.index;
-                auto &size = get<index>(shape);
-                auto &stride = get<index>(strides);
+                auto &size = get<index>(shape_);
+                auto &stride = get<index>(strides_);
                 auto &axis = get<index>(axes);
                 if constexpr (slice.kind == ST::Index) {
                     assert(slice.end >= 0 && slice.end < size);
@@ -262,12 +304,6 @@ protected:
         }, zip<true>(slices2));
     }
 
-    ConstTensor(Pointer pointer, typename SST::Pair && sst) :
-        shape(sst.first),
-        strides(sst.second),
-        pointer(pointer)
-    {}
-
     static size_t bufferSize(const ShapeType &shape) noexcept
     {
         static_assert((Axes::contiguous && ...), "Unable to calculate size for non-contiguous tensor");
@@ -280,6 +316,8 @@ protected:
         return bufferSize(ShapeType(tupleSlice<0, sizeof...(Axes)>(SST::build(args...).first)));
     }
 
+    ShapeType shape_;
+    StridesType strides_;
     mutable Pointer pointer;
 };
 
@@ -294,6 +332,9 @@ public:
     using Item = typename Const::Item;
     using Ids = typename Const::Ids;
 
+    Tensor()
+    {}
+
     Tensor(Pointer pointer, const ShapeType &shape) :
         Const(pointer, shape)
     {}
@@ -307,8 +348,9 @@ public:
         Const(pointer, Const::SST::build(std::forward<Args>(args)...))
     {}
 
-    Tensor(Tensor &tensor) = default;
-    Tensor &operator=(Tensor &tensor) = default;
+    using Const::operator=;
+    Tensor &operator=(const Const &tensor) = delete;
+    Tensor &operator=(Const && other) = delete;
 
     template<typename Other> static Tensor from(Other &item)
     {
@@ -318,9 +360,9 @@ public:
     template<typename Other>
     Other map()
     {
-        AllocatedTensor<Buffer, Item, RemoveStride<Axes>...> result(Const::shape);
+        AllocatedTensor<Buffer, Item, RemoveStride<Axes>...> result(Const::shape_);
         result.copyFrom(*this);
-        return Export<Buffer, Other>::create(static_cast<Item *>(rawPointer()), Const::shape.tuple(), Const::strides);
+        return Export<Buffer, Other>::create(static_cast<Item *>(rawPointer()), Const::shape_.tuple(), Const::strides_);
     }
 
     using Const::operator[];
@@ -353,9 +395,9 @@ public:
     {
         static_assert(Const::onHost, "Tensor must be located on host memory");
         static_assert(sizeof...(Axes) == 1, "= available only for one dimensional Tensor");
-        assert(items.size() == get<0>(Const::shape));
+        assert(items.size() == get<0>(Const::shape_));
         auto ptr = static_cast<Item *>(rawPointer());
-        auto stride = get<0>(Const::strides);
+        auto stride = get<0>(Const::strides_);
         for (const auto &item: items) {
             *ptr = item;
             ptr += stride;
@@ -386,9 +428,9 @@ public:
         static_assert(is_same_v<Item, GetItem<OtherPtr>>, "Item types must be the same");
         static_assert(is_same_v<Ids, typename ConstTensor<OtherPtr, OtherAxes...>::Ids>, "Tensor dims must be the same");
         static_assert(((Axes::dynamic || OtherAxes::dynamic || Axes::size == OtherAxes::size) && ...), "Tensor shapes must be the same");
-        assert(Const::shape == other.shape);
+        assert(Const::shape() == other.shape());
 
-        auto cs = commonStrides<sizeof(Item)>(make_tuple(BoolConst<Axes::contiguous && OtherAxes::contiguous>() ...), Const::shape.tuple(), other.strides, Const::strides);
+        auto cs = commonStrides<sizeof(Item)>(make_tuple(BoolConst<Axes::contiguous && OtherAxes::contiguous>() ...), Const::shape().tuple(), other.strides(), Const::strides_);
         size_t size = get<0>(cs);
         apply([this, size, &other] (auto... args) {
             Copy<GetBuffer<OtherPtr>, GetBuffer<Pointer>>::copy(other.rawPointer(), rawPointer(), size, args...);

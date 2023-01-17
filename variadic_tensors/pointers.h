@@ -29,6 +29,12 @@ public:
         value(other.value)
     {}
 
+    SharedPointer &operator=(std::nullptr_t) noexcept
+    {
+        value.reset();
+        return *this;
+    }
+
     operator Item*() noexcept
     {
         return static_cast<Item *>(value->get());
@@ -37,6 +43,11 @@ public:
     operator Item*() const noexcept
     {
         return static_cast<Item *>(value->get());
+    }
+
+    operator bool() const noexcept
+    {
+        return value;
     }
 
     SharedPointer<Buffer_, Item_, true> operator+(size_t offset)
