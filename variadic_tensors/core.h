@@ -245,6 +245,12 @@ public:
         return stream << ")";
     }
 
+    template<uint id>
+    auto shape() const noexcept {
+        constexpr int idx = findIndex<id, Axes::id...>;
+        static_assert(idx >= 0, "Axis id not found");
+        return get<idx>(shape_.tuple());
+    }
     const ShapeType &shape() const noexcept { return shape_; };
     const StridesType &strides() const noexcept { return strides_; };
 
