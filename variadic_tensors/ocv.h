@@ -46,5 +46,18 @@ struct Import<cv::Mat, Tensor<Item *, vt::Axis<H>, vt::Axis<W>, vt::Axis<C, chan
     }
 };
 
+template<template<typename... Args> typename Tensor, typename Item, int H, int W, int C, int channels>
+struct Import<cv::Mat, Tensor<Item *, vt::Axis<H, Dynamic, Dynamic>, vt::Axis<W>, vt::Axis<C, channels>>>
+{
+    static_assert(channels >= 1 && channels <= 4, "Wrong channel number");
+    using Result = PassiveTensor<uint8_t, vt::Axis<H, Dynamic, Dynamic>, vt::Axis<W>, vt::Axis<C, channels>>;
+    static Result create(cv::Mat &image)
+    {
+        if (image.type() != cvType<Item, channels>)
+            throw std::runtime_error("cv::Mat type mismatch");
+        return Result(image.data, image.rows, image.cols, static_cast<size_t>(image.step));
+    }
+};
+
 }
 #endif // OCV_H
