@@ -1,4 +1,6 @@
 #include <string>
+#include <filesystem>
+#include <source_location>
 #include <cuda_runtime.h>
 #include <nppdefs.h>
 #include <nppi_geometry_transforms.h>
@@ -9,22 +11,32 @@ using namespace std;
 
 namespace vt {
 
+inline std::ostream& operator<<(std::ostream &stream, const std::source_location &sl) noexcept
+{
+    std::filesystem::path const fn = sl.file_name();
+    return stream << fn.filename().string() << ":" << std::dec << sl.line()
+                  << " [" << sl.function_name() << "]: ";
+}
+
+void cudaCheck(cudaError_t status, const std::string &name, std::source_location const& sl = std::source_location::current())
+{
+    if(status != cudaSuccess) {
+        std::ostringstream ss;
+        ss << sl << name << " error: " << cudaGetErrorString(status);
+        throw std::runtime_error(ss.str());
+    }
+}
+
 void *CudaBuffer::malloc(size_t size)
 {
     void *ptr;
-    auto result = cudaMalloc(&ptr, size);
-    if(result != cudaSuccess) {
-        auto e = cudaGetErrorString(result);
-        throw std::runtime_error("cudaMalloc error");
-    }
+    cudaCheck(cudaMalloc(&ptr, size), "cudaMalloc");
     return ptr;
 }
 
 void CudaBuffer::dealloc(void *ptr)
 {
-    auto result = cudaFree(ptr);
-    if(result != cudaSuccess)
-        throw std::runtime_error("cudaFree error");
+    cudaCheck(cudaFree(ptr), "cudaFree");
 }
 
 std::ostream &operator<<(std::ostream &stream, const Empty &t) noexcept
@@ -35,47 +47,35 @@ std::ostream &operator<<(std::ostream &stream, const Empty &t) noexcept
 void *PinnedBuffer::malloc(size_t size)
 {
     void *ptr;
-    auto result = cudaHostAlloc(&ptr, size, cudaHostAllocDefault);
-    if(result != cudaSuccess)
-        throw std::runtime_error("cudaHostAlloc error");
+    cudaCheck(cudaHostAlloc(&ptr, size, cudaHostAllocDefault), "cudaHostAlloc");
     return ptr;
 }
 
 void PinnedBuffer::dealloc(void *ptr)
 {
-    auto result = cudaFreeHost(ptr);
-    if(result != cudaSuccess)
-        throw std::runtime_error("cudaFree error");
+    cudaCheck(cudaFreeHost(ptr), "cudaFreeHost");
 }
 
 void HostCudaCopy::copy(const void *src, void *dst, size_t size)
 {
-    auto result = cudaMemcpy(dst, src, size, cudaMemcpyHostToDevice);
-    if (result != cudaSuccess)
-        throw std::runtime_error("cudaMemcpy HostToDevice error");
+    cudaCheck(cudaMemcpy(dst, src, size, cudaMemcpyHostToDevice), "cudaMemcpy HostToDevice");
 }
 
 void HostCudaCopy::copy(const void *src, void *dst, size_t rows, const std::tuple<int, int, int> &strides)
 {
     auto [width, s, d] = strides;
-    auto result = cudaMemcpy2D(dst, d, src, s, width, rows, cudaMemcpyHostToDevice);
-    if (result != cudaSuccess)
-        throw std::runtime_error("cudaMemcpy2D HostToDevice error");
+    cudaCheck(cudaMemcpy2D(dst, d, src, s, width, rows, cudaMemcpyHostToDevice), "cudaMemcpy2D HostToDevice");
 }
 
 void CudaHostCopy::copy(const void *src, void *dst, size_t size)
 {
-    auto result = cudaMemcpy(dst, src, size, cudaMemcpyDeviceToHost);
-    if (result != cudaSuccess)
-        throw std::runtime_error("cudaMemcpy DeviceToHost error");
+    cudaCheck(cudaMemcpy(dst, src, size, cudaMemcpyDeviceToHost), "cudaMemcpy DeviceToHost");
 }
 
 void CudaHostCopy::copy(const void *src, void *dst, size_t rows, const std::tuple<int, int, int> &strides)
 {
     auto [width, s, d] = strides;
-    auto result = cudaMemcpy2D(dst, d, src, s, width, rows, cudaMemcpyDeviceToHost);
-    if (result != cudaSuccess)
-        throw std::runtime_error("cudaMemcpy2D DeviceToHost error");
+    cudaCheck(cudaMemcpy2D(dst, d, src, s, width, rows, cudaMemcpyDeviceToHost), "cudaMemcpy2D DeviceToHost");
 }
 
 void CudaResize::resize(const uint8_t *src, uint8_t *dst,

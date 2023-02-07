@@ -439,6 +439,7 @@ public:
         }, get<1>(cs));
     }
 
+    using Const::rawPointer;
     void *rawPointer() noexcept { return Const::pointer; }
 };
 
