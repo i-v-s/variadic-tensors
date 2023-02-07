@@ -22,7 +22,7 @@ void cudaCheck(cudaError_t status, const std::string &name, std::source_location
 {
     if(status != cudaSuccess) {
         std::ostringstream ss;
-        ss << sl << name << " error: " << cudaGetErrorString(status);
+        ss << sl << name << " error: " << status << " " << cudaGetErrorString(status);
         throw std::runtime_error(ss.str());
     }
 }

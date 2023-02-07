@@ -9,6 +9,7 @@
 #include <tuple>
 #include <utility>
 #include <sstream>
+#include <stdexcept>
 #include <assert.h>
 
 #include "./axis.h"
@@ -289,7 +290,8 @@ protected:
                 auto &stride = get<index>(strides_);
                 auto &axis = get<index>(axes);
                 if constexpr (slice.kind == ST::Index) {
-                    assert(slice.end >= 0 && slice.end < size);
+                    if (slice.end < 0 || slice.end >= size)
+                        throw out_of_range("at() argument " + to_string(slice.end) + " not in range 0.." + to_string(size));
                     return TensorInfo<index - 1, axis.size == 1 && value.ctg, decltype(value.result)>{value.offset + product(slice.end, stride), value.result};
                 } else if constexpr(slice.kind == ST::None) {
                     Axis<axis.id, axis.size, value.ctg ? Auto : axis.stride> newAxis;
@@ -299,6 +301,8 @@ protected:
                     assert(!"!!!");
                     return TensorInfo{value.offset, pushFront(make_tuple(1, 0, Axis<0, 1>()), value.result)};
                 } else if constexpr(slice.kind == ST::Slice) {
+                    if (slice.begin < 0 || slice.begin >= size)
+                        throw out_of_range("at() slice begin " + to_string(slice.begin) + " not in range 0.." + to_string(size));
                     auto size = slice.size();
                     Axis<axis.id, is_same_v<decltype(size), int> ? Dynamic : static_cast<int>(size), value.ctg ? axis.stride : Dynamic> newAxis;
                     auto result = pushFront(make_tuple(size, product(stride, slice.step), newAxis), value.result);
