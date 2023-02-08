@@ -3,6 +3,7 @@
 #include <source_location>
 #include <cuda_runtime.h>
 #include <nppdefs.h>
+#include <nppcore.h>
 #include <nppi_geometry_transforms.h>
 
 #include "./cuda.h"
@@ -23,6 +24,15 @@ void cudaCheck(cudaError_t status, const std::string &name, std::source_location
     if(status != cudaSuccess) {
         std::ostringstream ss;
         ss << sl << name << " error: " << status << " " << cudaGetErrorString(status);
+        throw std::runtime_error(ss.str());
+    }
+}
+
+void cudaCheck(NppStatus status, const std::string &name, std::source_location const& sl = std::source_location::current())
+{
+    if(status != NPP_NO_ERROR) {
+        std::ostringstream ss;
+        ss << sl << name << " error: " << status;
         throw std::runtime_error(ss.str());
     }
 }
@@ -78,17 +88,30 @@ void CudaHostCopy::copy(const void *src, void *dst, size_t rows, const std::tupl
     cudaCheck(cudaMemcpy2D(dst, d, src, s, width, rows, cudaMemcpyDeviceToHost), "cudaMemcpy2D DeviceToHost");
 }
 
+NppStreamContext &CudaResize::context()
+{
+    thread_local NppStreamContext ctx = [] {
+        NppStreamContext ctx;
+        cudaCheck(nppGetStreamContext(&ctx), "nppGetStreamContext");
+        return ctx;
+    }();
+    return ctx;
+}
+
 void CudaResize::resize(const uint8_t *src, uint8_t *dst,
                         const std::tuple<int, int, IntConst<3> > &srcShape, const std::tuple<int, int, IntConst<3> > &dstShape,
-                        const std::tuple<int, IntConst<3>, IntConst<1> > &srcStrides, const std::tuple<int, IntConst<3>, IntConst<1> > &dstStrides)
+                        const std::tuple<int, IntConst<3>, IntConst<1> > &srcStrides, const std::tuple<int, IntConst<3>, IntConst<1> > &dstStrides,
+                        cudaStream_t stream)
 {
     auto [sh, sw, _1] = srcShape;
     auto [dh, dw, _2] = dstShape;
     NppiRect srcRoi{0, 0, sw, sh}, dstRoi{0, 0, dw, dh};
-    auto status = nppiResize_8u_C3R(src, get<0>(srcStrides), {sw, sh}, srcRoi,
-                                    dst, get<0>(dstStrides), {dw, dh}, dstRoi, NPPI_INTER_LINEAR);
-    if (status != 0)
-        throw std::runtime_error("nppiResize_8u_C3R error" + to_string(status));
+    auto &ctx = context();
+    ctx.hStream = stream;
+
+    cudaCheck(nppiResize_8u_C3R_Ctx(src, get<0>(srcStrides), {sw, sh}, srcRoi,
+                                    dst, get<0>(dstStrides), {dw, dh}, dstRoi, NPPI_INTER_LINEAR, ctx),
+              "nppiResize_8u_C3R_Ctx");
 }
 
 }

@@ -202,24 +202,25 @@ public:
         return Export<Buffer, Other>::create(static_cast<const Item *>(rawPointer()), shape_.tuple(), strides_);
     }
 
-    template<typename Dst>
-    void resizeTo(Dst &result) const
+    template<typename Dst, typename... Args>
+    void resizeTo(Dst &result, Args && ... args) const
     {
         static_assert(std::is_same_v<Item, typename Dst::Item>, "Tensor item types must be the same");
         static_assert(Buffer::device == Dst::Buffer::device, "Tensors must be on the same device");
         Resize<GetBuffer<typename Dst::Pointer>>::resize(
                     static_cast<const Item *>(rawPointer()), static_cast<Item *>(result.rawPointer()),
-                    shape_, result.shape(), strides_, result.strides());
+                    shape_, result.shape(), strides_, result.strides(), std::forward<Args>(args)...);
     }
 
-    template<int... ids>
-    auto resize(Integer auto... sizes) const
+    template<int... ids, typename... Args>
+    auto resize(Args... args) const
     {
         using namespace std;
-        static_assert(sizeof...(ids) == sizeof...(sizes), "Count of ids must be equal to count of sizes");
         static_assert(((findIndex<ids, Axes::id...> >= 0) && ...), "Specified non-existent axis id");
+        static_assert(sizeof...(ids) <= sizeof...(args), "Count of ids must be equal to count of sizes");
         constexpr auto indices = make_tuple(findIndex<Axes::id, ids...>...);
-        auto sizesTuple = make_tuple(sizes...);
+        auto argsTuple = forward_as_tuple(args...);
+        auto sizesTuple = tupleSlice<0, sizeof...(ids)>(argsTuple);
 
         auto newShape = tupleMap<true>([&indices, &sizesTuple] <int i> (Integer auto size) {
             constexpr int idx = get<i>(indices);
@@ -231,7 +232,7 @@ public:
         // TODO: Fix axes
         using Dst = AllocatedTensor<GetBuffer<Pointer>, Item, RemoveStride<Axes>...>;
         Dst result(newShape);
-        resizeTo(result);
+        apply([this, &result] (auto... args) { resizeTo(result, args...); }, tupleSlice<sizeof...(ids)>(argsTuple));
         return result;
     }
 

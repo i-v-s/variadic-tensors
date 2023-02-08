@@ -1,5 +1,7 @@
-#ifndef CUDA_H
-#define CUDA_H
+#ifndef VT_CUDA_H
+#define VT_CUDA_H
+#include <nppdefs.h>
+
 #include "./core.h"
 
 namespace vt {
@@ -58,9 +60,11 @@ template<CudaBufferLike Src, HostBufferLike Dst>
 struct Copy<Src, Dst> : public CudaHostCopy {};
 
 struct CudaResize{
+    static NppStreamContext &context();
     static void resize(const uint8_t* src, uint8_t *dst,
                        const std::tuple<int, int, IntConst<3>> &srcShape, const std::tuple<int, int, IntConst<3>> &dstShape,
-                       const std::tuple<int, IntConst<3>, IntConst<1>> &srcStrides, const std::tuple<int, IntConst<3>, IntConst<1>> &dstStrides);
+                       const std::tuple<int, IntConst<3>, IntConst<1>> &srcStrides, const std::tuple<int, IntConst<3>, IntConst<1>> &dstStrides,
+                       cudaStream_t stream = nullptr);
 };
 
 template<CudaBufferLike Buffer>
@@ -68,4 +72,4 @@ struct Resize<Buffer> : public CudaResize {};
 
 }
 
-#endif // CUDA_H
+#endif // VT_CUDA_H
