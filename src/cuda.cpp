@@ -101,7 +101,7 @@ NppStreamContext &CudaResize::context()
 void CudaResize::resize(const uint8_t *src, uint8_t *dst,
                         const std::tuple<int, int, IntConst<3> > &srcShape, const std::tuple<int, int, IntConst<3> > &dstShape,
                         const std::tuple<int, IntConst<3>, IntConst<1> > &srcStrides, const std::tuple<int, IntConst<3>, IntConst<1> > &dstStrides,
-                        cudaStream_t stream)
+                        NppiInterpolationMode mode, cudaStream_t stream)
 {
     auto [sh, sw, _1] = srcShape;
     auto [dh, dw, _2] = dstShape;
@@ -110,7 +110,7 @@ void CudaResize::resize(const uint8_t *src, uint8_t *dst,
     ctx.hStream = stream;
 
     cudaCheck(nppiResize_8u_C3R_Ctx(src, get<0>(srcStrides), {sw, sh}, srcRoi,
-                                    dst, get<0>(dstStrides), {dw, dh}, dstRoi, NPPI_INTER_LINEAR, ctx),
+                                    dst, get<0>(dstStrides), {dw, dh}, dstRoi, mode, ctx),
               "nppiResize_8u_C3R_Ctx");
 }
 

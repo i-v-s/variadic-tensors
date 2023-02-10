@@ -64,7 +64,7 @@ struct CudaResize{
     static void resize(const uint8_t* src, uint8_t *dst,
                        const std::tuple<int, int, IntConst<3>> &srcShape, const std::tuple<int, int, IntConst<3>> &dstShape,
                        const std::tuple<int, IntConst<3>, IntConst<1>> &srcStrides, const std::tuple<int, IntConst<3>, IntConst<1>> &dstStrides,
-                       cudaStream_t stream = nullptr);
+                       NppiInterpolationMode mode = NPPI_INTER_LINEAR, cudaStream_t stream = nullptr);
 };
 
 template<CudaBufferLike Buffer>
