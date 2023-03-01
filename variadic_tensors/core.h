@@ -115,7 +115,7 @@ public:
     ConstTensor(Pointer pointer, Args... args) : ConstTensor(pointer, SST::build(args...))
     {}
 
-    ConstTensor(const ConstTensor &tensor) = default;
+    ConstTensor(const ConstTensor &) = default;
 
     ConstTensor(ConstTensor && other) :
         shape_(other.shape_),
@@ -125,7 +125,7 @@ public:
         other.pointer = nullptr;
     }
 
-    ConstTensor &operator=(const ConstTensor &tensor) = default;
+    ConstTensor &operator=(const ConstTensor &) = default;
 
     ConstTensor &operator=(ConstTensor && other)
     {

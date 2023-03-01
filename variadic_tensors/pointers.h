@@ -29,6 +29,8 @@ public:
         value(other.value)
     {}
 
+    SharedPointer &operator=(const SharedPointer &) = default;
+
     SharedPointer &operator=(std::nullptr_t) noexcept
     {
         value.reset();
@@ -71,6 +73,8 @@ public:
     SharedPointer(std::shared_ptr<Buffer_> value, Item_ *ptr) :
         Parent(value), ptr(ptr)
     {}
+
+    SharedPointer &operator=(const SharedPointer &) = default;
 
     operator Item*() noexcept { return ptr; }
 
