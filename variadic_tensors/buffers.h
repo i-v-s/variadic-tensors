@@ -18,11 +18,15 @@ public:
 };
 
 template<class T>
-concept BufferLike =
+concept AllocatedBufferLike =
         requires(T t) {
             { T::malloc(std::declval<size_t>()) } -> std::same_as<void*>;
             { T::dealloc(std::declval<void*>()) } -> std::same_as<void>;
         };
+
+template<class T>
+concept BufferLike =
+        AllocatedBufferLike<T> || std::is_same_v<T, PassiveBuffer>;
 
 template<class T>
 concept HostBufferLike =

@@ -27,6 +27,8 @@ int main(int argc, char *argv[])
     bool e1 = lic.empty();
     lic = LocalImage::from(image);
     bool e2 = lic.empty();
+
+    static_assert(vt::BufferLike<vt::PassiveBuffer>);
     auto licc = lic.to<vt::CudaBuffer>();
     auto liccc = licc.at(vt::Slice(100, 200), vt::Slice(200, 400));
     auto liccc1 = liccc;
