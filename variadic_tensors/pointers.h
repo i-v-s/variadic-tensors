@@ -14,14 +14,14 @@ public:
     using Buffer = Buffer_;
 
     explicit SharedPointer(size_t size) :
-        value(new Buffer(size))
+        value{ Buffer::malloc(size), Buffer::dealloc }
     {}
 
     SharedPointer(SharedPointer && other) :
         value(std::move(other.value))
     {}
 
-    SharedPointer(std::shared_ptr<Buffer> value) :
+    SharedPointer(std::shared_ptr<Item> value) :
         value(value)
     {}
 
@@ -39,26 +39,21 @@ public:
 
     operator Item*() noexcept
     {
-        return static_cast<Item *>(value->get());
+        return static_cast<Item *>(value.get());
     }
 
     operator Item*() const noexcept
     {
-        return static_cast<Item *>(value->get());
-    }
-
-    operator bool() const noexcept
-    {
-        return value;
+        return static_cast<Item *>(value.get());
     }
 
     SharedPointer<Buffer_, Item_, true> operator+(size_t offset)
     {
-        return {value, static_cast<Item *>(value->get()) + offset};
+        return {value, static_cast<Item *>(value.get()) + offset};
     }
 
 protected:
-    std::shared_ptr<Buffer> value;
+    std::shared_ptr<Item> value;
 };
 
 template<BufferLike Buffer_, typename Item_>

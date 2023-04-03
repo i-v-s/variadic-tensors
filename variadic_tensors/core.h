@@ -143,7 +143,7 @@ public:
 
     bool empty() const noexcept
     {
-        return !pointer;
+        return !bool(pointer);
     }
 
     template<typename Other> static ConstTensor from(Other &item)
@@ -457,6 +457,8 @@ class AllocatedTensor: public Tensor<SharedPointer<Buffer, Item, false>, TensorA
 public:
     using Pointer = SharedPointer<Buffer, Item, false>;
     using Parent = Tensor<Pointer, TensorArgs...>;
+
+    AllocatedTensor() {}
 
     template<std::integral... Args>
     AllocatedTensor(Args... args) :

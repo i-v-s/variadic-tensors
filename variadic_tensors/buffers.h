@@ -1,6 +1,7 @@
 #ifndef BUFFERS_H
 #define BUFFERS_H
 #include <memory>
+#include <cstdlib>
 
 namespace vt {
 
@@ -18,7 +19,10 @@ public:
 
 template<class T>
 concept BufferLike =
-        (std::is_constructible_v<T, size_t> && !std::copyable<T>) || std::is_same_v<T, PassiveBuffer>;
+        requires(T t) {
+            { T::malloc(std::declval<size_t>()) } -> std::same_as<void*>;
+            { T::dealloc(std::declval<void*>()) } -> std::same_as<void>;
+        };
 
 template<class T>
 concept HostBufferLike =
@@ -28,41 +32,14 @@ template<class T>
 concept CudaBufferLike =
         BufferLike<T> && T::device == Device::Cuda;
 
-template<typename Derived>
-class Buffer
+class Static { Static() = delete; };
+
+class HeapBuffer: Static
 {
 public:
     constexpr static Device device = Device::Host;
-    Buffer() = delete;
-    Buffer(size_t size) : memory(Derived::malloc(size), &Derived::dealloc) {}
-
-    Buffer(const Buffer &) = delete;
-    Buffer(Buffer &&) = delete;
-    Buffer &operator=(const Buffer &) = delete;
-    Buffer &operator=(Buffer &&) = delete;
-    operator PassiveBuffer(){ return {}; }
-
-    void *get() noexcept { return memory.get(); }
-    const void *get() const noexcept { return memory.get(); }
-private:
-    std::unique_ptr<void, void (*)(void *)> memory;
-};
-
-class HeapBuffer
-{
-public:
-    constexpr static Device device = Device::Host;
-    HeapBuffer(size_t size);
-
-    HeapBuffer(const HeapBuffer &) = delete;
-    HeapBuffer(HeapBuffer &&) = delete;
-    HeapBuffer &operator=(const HeapBuffer &) = delete;
-    HeapBuffer &operator=(HeapBuffer &&) = delete;
-
-    void *get() noexcept;
-    const void *get() const noexcept;
-private:
-    std::unique_ptr<uint8_t[]> memory;
+    static void *malloc(size_t size) noexcept { return std::malloc(size); }
+    static void dealloc(void *ptr) noexcept { return std::free(ptr); }
 };
 
 }
