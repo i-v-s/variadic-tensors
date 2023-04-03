@@ -6,28 +6,20 @@
 
 namespace vt {
 
-class PinnedBuffer: public Buffer<PinnedBuffer>
+class PinnedBuffer: private Static
 {
 public:
-    using Parent = Buffer<PinnedBuffer>;
-    using Parent::Parent;
     constexpr static Device device = Device::Host;
-protected:
     static void *malloc(size_t size);
     static void dealloc(void *ptr);
-    friend class Buffer<PinnedBuffer>;
 };
 
-class CudaBuffer: public Buffer<CudaBuffer>
+class CudaBuffer: private Static
 {
 public:
-    using Parent = Buffer<CudaBuffer>;
-    using Parent::Parent;
     constexpr static Device device = Device::Cuda;
-protected:
     static void *malloc(size_t size);
     static void dealloc(void *ptr);
-    friend class Buffer<CudaBuffer>;
 };
 
 template<typename Item, bool offset>
