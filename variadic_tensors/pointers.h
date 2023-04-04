@@ -14,14 +14,14 @@ public:
     using Buffer = Buffer_;
 
     explicit SharedPointer(size_t size) :
-        value(new Buffer(size))
+        value{ static_cast<Item *>(Buffer::malloc(size)), Buffer::dealloc }
     {}
 
     SharedPointer(SharedPointer && other) :
         value(std::move(other.value))
     {}
 
-    SharedPointer(std::shared_ptr<Buffer> value) :
+    SharedPointer(std::shared_ptr<Item> value) :
         value(value)
     {}
 
@@ -37,28 +37,23 @@ public:
         return *this;
     }
 
-    operator Item*() noexcept
+    operator Item * () noexcept
     {
-        return static_cast<Item *>(value->get());
+        return value.get();
     }
 
-    operator Item*() const noexcept
+    operator Item * () const noexcept
     {
-        return static_cast<Item *>(value->get());
-    }
-
-    operator bool() const noexcept
-    {
-        return value;
+        return value.get();
     }
 
     SharedPointer<Buffer_, Item_, true> operator+(size_t offset)
     {
-        return {value, static_cast<Item *>(value->get()) + offset};
+        return { value, static_cast<Item *>(value.get()) + offset };
     }
 
 protected:
-    std::shared_ptr<Buffer> value;
+    std::shared_ptr<Item> value;
 };
 
 template<BufferLike Buffer_, typename Item_>
@@ -70,15 +65,22 @@ public:
 
     using Parent::Parent;
 
-    SharedPointer(std::shared_ptr<Buffer_> value, Item_ *ptr) :
+    SharedPointer(std::shared_ptr<Item> value, Item_ *ptr) :
         Parent(value), ptr(ptr)
     {}
 
     SharedPointer &operator=(const SharedPointer &) = default;
 
-    operator Item*() noexcept { return ptr; }
+    SharedPointer &operator=(std::nullptr_t) noexcept
+    {
+        ptr = nullptr;
+        Parent::operator=(nullptr);
+        return *this;
+    }
 
-    operator Item*() const noexcept { return ptr; }
+    operator Item * () noexcept { return ptr; }
+
+    operator Item * () const noexcept { return ptr; }
 
     SharedPointer<Buffer_, Item_, true> operator+(size_t offset)
     {

@@ -18,6 +18,25 @@ using HostImage = vt::PinnedTensor<uint8_t, vt::Axis<Height>, vt::Axis<Width>, v
 using CudaImage = vt::CudaTensor<uint8_t, vt::Axis<Height>, vt::Axis<Width>, vt::Axis<Channels, 3>>;
 
 
+void batchResizeTest(CudaImage &image)
+{
+    auto
+        src1 = image.at(vt::Slice(50, 100), vt::Slice(200, 250)),
+        src2 = image.at(vt::Slice(100, 150), vt::Slice(200, 250));
+    auto
+        dst1 = image.at(vt::Slice(350, 600), vt::Slice(200, 600)),
+        dst2 = image.at(vt::Slice(200, 300), vt::Slice(300, 500));
+    //using vec = vector<CudaImage>;
+    vector src = {src1, src2};
+    vector dst = {dst1, dst2};
+    vt::resizeBatch(src, dst);
+
+    auto pb = image.to<vt::PinnedBuffer>();
+    cv::imshow("batchResizeTest", pb.as<cv::Mat>());
+    cv::waitKey(0);
+    return;
+}
+
 int main(int argc, char *argv[])
 {
     cv::Mat image = cv::imread("/media/cv/D/data/cars/good/ambulance/0048.jpg");
@@ -27,7 +46,11 @@ int main(int argc, char *argv[])
     bool e1 = lic.empty();
     lic = LocalImage::from(image);
     bool e2 = lic.empty();
+
+    static_assert(vt::BufferLike<vt::PassiveBuffer>);
     auto licc = lic.to<vt::CudaBuffer>();
+    batchResizeTest(licc);
+
     auto liccc = licc.at(vt::Slice(100, 200), vt::Slice(200, 400));
     auto liccc1 = liccc;
     cv::imshow("Crop1", liccc1.resize<Width, Height>(500, 300).to<vt::PinnedBuffer>().as<cv::Mat>());
