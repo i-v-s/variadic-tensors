@@ -80,7 +80,7 @@ public:
 
     operator Item * () noexcept { return ptr; }
 
-    operator Item * () const noexcept { return ptr; }
+    operator const Item * () const noexcept { return ptr; }
 
     SharedPointer<Buffer_, Item_, true> operator+(size_t offset)
     {
