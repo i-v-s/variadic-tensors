@@ -143,7 +143,7 @@ public:
 
     bool empty() const noexcept
     {
-        return !pointer;
+        return !bool(pointer);
     }
 
     template<typename Other> static ConstTensor from(Other &item)
@@ -448,6 +448,35 @@ public:
     void *rawPointer() noexcept { return Const::pointer; }
 };
 
+template<typename Source, typename Destination, typename... Args>
+void resizeBatch(const std::vector<Source> &sources, std::vector<Destination> &targets, Args... args)
+{
+    using namespace std;
+    using Buffer = GetBuffer<typename Source::Pointer>;
+    static_assert(Buffer::device == Destination::Buffer::device, "Tensors must be on the same device");
+    if (sources.size() != targets.size())
+        throw runtime_error("vt::batchResize(): Batches must be the same");
+    if (sources.empty())
+        return;
+    if (sources.size() == 1)
+        sources[0].resizeTo(targets[0], forward<Args>(args)...);
+    else
+        Resize<Buffer>::resizeBatch(sources, targets, forward<Args>(args)...);
+}
+
+template<typename Source, typename Destination, typename... Args>
+void resizeBatch(const std::vector<Source> &sources, Destination &target, Args... args)
+{
+    using namespace std;
+    int dstBatch = get<0>(target.shape());
+    if (dstBatch < sources.size())
+        throw runtime_error("vt::batchResize(): Destination batch not enough");
+    vector<decltype(target[0])> targets;
+    for (int i = 0, e = sources.size(); i < e; i++)
+        targets.push_back(target[i]);
+    resizeBatch(sources, targets);
+}
+
 template<typename Item, typename... Args>
 using PassiveTensor = Tensor<Item *, Args...>;
 
@@ -457,6 +486,8 @@ class AllocatedTensor: public Tensor<SharedPointer<Buffer, Item, false>, TensorA
 public:
     using Pointer = SharedPointer<Buffer, Item, false>;
     using Parent = Tensor<Pointer, TensorArgs...>;
+
+    AllocatedTensor() {}
 
     template<std::integral... Args>
     AllocatedTensor(Args... args) :
