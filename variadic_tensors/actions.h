@@ -15,7 +15,10 @@ struct HostCopy
 template<HostBufferLike Src, HostBufferLike Dst>
 struct Copy<Src, Dst> : HostCopy {};
 
+using AffineMatrix = std::array<std::array<double, 3>, 2>;
+
 template<BufferLike Buffer> struct Resize;
+template<BufferLike Buffer> struct WarpAffine;
 template<BufferLike Buffer, typename Other> struct Export;
 template<typename Other, typename Tensor> struct Import;
 

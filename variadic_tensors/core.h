@@ -202,15 +202,29 @@ public:
         return Export<Buffer, Other>::create(static_cast<const Item *>(rawPointer()), shape_.tuple(), strides_);
     }
 
-    template<typename Dst, typename... Args>
-    void resizeTo(Dst &result, Args && ... args) const
+    auto asVector(size_t limit = 0) const noexcept
+    {
+        std::vector<decltype((*this)[0])> result;
+        assert(limit <= shape_[0]);
+        for (int i = 0, e = limit || shape_[0]; i < e; i++) result.push_back((*this)[i]);
+        return result;
+    }
+
+    template<template<typename T> typename Action, typename Dst, typename... Args>
+    void actionTo(Dst &result, Args && ... args) const
     {
         static_assert(std::is_same_v<Item, typename Dst::Item>, "Tensor item types must be the same");
         static_assert(Buffer::device == Dst::Buffer::device, "Tensors must be on the same device");
-        Resize<GetBuffer<typename Dst::Pointer>>::resize(
+        Action<GetBuffer<typename Dst::Pointer>>::apply(
                     static_cast<const Item *>(rawPointer()), static_cast<Item *>(result.rawPointer()),
                     shape_, result.shape(), strides_, result.strides(), std::forward<Args>(args)...);
     }
+
+    template<typename Dst, typename... Args>
+    void resizeTo(Dst &result, Args && ... args) const { actionTo<Resize>(result, std::forward<Args>(args)...); }
+
+    template<typename Dst, typename... Args>
+    void warpAffineTo(Dst &result, const AffineMatrix &coeffs, Args && ... args) const { actionTo<WarpAffine>(result, coeffs, std::forward<Args>(args)...); }
 
     template<int... ids, typename... Args>
     auto resize(Args... args) const
@@ -448,33 +462,53 @@ public:
     void *rawPointer() noexcept { return Const::pointer; }
 };
 
-template<typename Source, typename Destination, typename... Args>
-void resizeBatch(const std::vector<Source> &sources, std::vector<Destination> &targets, Args... args)
+template<template<typename T> typename Action, typename Source, typename Destination, typename... Args>
+void actionBatch(const std::vector<Source> &sources, std::vector<Destination> &targets, Args... args)
 {
     using namespace std;
     using Buffer = GetBuffer<typename Source::Pointer>;
     static_assert(Buffer::device == Destination::Buffer::device, "Tensors must be on the same device");
     if (sources.size() != targets.size())
-        throw runtime_error("vt::batchResize(): Batches must be the same");
+        throw runtime_error("vt::actionBatch(): Batches must be the same");
     if (sources.empty())
         return;
     if (sources.size() == 1)
-        sources[0].resizeTo(targets[0], forward<Args>(args)...);
+        sources[0].template actionTo<Action>(targets[0], forward<Args>(args)...);
     else
-        Resize<Buffer>::resizeBatch(sources, targets, forward<Args>(args)...);
+        Action<Buffer>::applyBatch(sources, targets, forward<Args>(args)...);
 }
 
-template<typename Source, typename Destination, typename... Args>
-void resizeBatch(const std::vector<Source> &sources, Destination &target, Args... args)
+template<template<typename T> typename Action, typename Source, typename Destination, typename... Args>
+void actionBatch(const std::vector<Source> &sources, Destination &target, Args... args)
 {
     using namespace std;
     int dstBatch = get<0>(target.shape());
     if (dstBatch < sources.size())
-        throw runtime_error("vt::batchResize(): Destination batch not enough");
-    vector<decltype(target[0])> targets;
-    for (int i = 0, e = sources.size(); i < e; i++)
-        targets.push_back(target[i]);
-    resizeBatch(sources, targets);
+        throw runtime_error("vt::actionBatch(): Destination batch not enough");
+    actionBatch<Action>(sources, target.asVector(sources.size()));
+}
+
+template<typename Source, typename Destination, typename... Args>
+void resizeBatch(const Source &source, Destination &target, Args... args)
+{
+    actionBatch<Resize>(source, target, std::forward<Args>(args)...);
+}
+
+template<typename Source, typename Destination, typename... Args>
+void warpAffineBatch(const std::vector<Source> &sources, Destination &target, const std::vector<AffineMatrix> &matrices, Args... args)
+{
+    using namespace std;
+    using Buffer = GetBuffer<typename Source::Pointer>;
+    static_assert(Buffer::device == Destination::Buffer::device, "Tensors must be on the same device");
+    int dstBatch = get<0>(target.shape());
+    int batchSize = sources.size();
+    if (batchSize != matrices.size() || dstBatch < sources.size())
+        throw runtime_error("vt::warpAffineBatch(): Wrong vector sizes");
+    if (!batchSize) return;
+    if (batchSize == 1)
+        sources[0].warpAffine(target[0], matrices[0], std::forward<Args>(args)...);
+    else
+        WarpAffine<Buffer>::applyBatch(sources);
 }
 
 template<typename Item, typename... Args>

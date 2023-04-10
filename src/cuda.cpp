@@ -37,6 +37,22 @@ void cudaCheck(NppStatus status, const std::string &name, std::source_location c
     }
 }
 
+NppStreamContext &vt::npp::context()
+{
+    thread_local NppStreamContext ctx = [] {
+        NppStreamContext ctx;
+        cudaCheck(nppGetStreamContext(&ctx), "nppGetStreamContext");
+        return ctx;
+    }();
+    return ctx;
+}
+
+NppiRect vt::npp::fullRect(const NppiSize &size) noexcept
+{
+    return { 0, 0, size.width, size.height };
+}
+
+
 void *CudaBuffer::malloc(size_t size)
 {
     void *ptr;
@@ -88,25 +104,15 @@ void CudaHostCopy::copy(const void *src, void *dst, size_t rows, const std::tupl
     cudaCheck(cudaMemcpy2D(dst, d, src, s, width, rows, cudaMemcpyDeviceToHost), "cudaMemcpy2D DeviceToHost");
 }
 
-NppStreamContext &CudaResize::context()
-{
-    thread_local NppStreamContext ctx = [] {
-        NppStreamContext ctx;
-        cudaCheck(nppGetStreamContext(&ctx), "nppGetStreamContext");
-        return ctx;
-    }();
-    return ctx;
-}
-
-void CudaResize::resize(const uint8_t *src, uint8_t *dst,
-                        const std::tuple<int, int, IntConst<3> > &srcShape, const std::tuple<int, int, IntConst<3> > &dstShape,
-                        const std::tuple<int, IntConst<3>, IntConst<1> > &srcStrides, const std::tuple<int, IntConst<3>, IntConst<1> > &dstStrides,
-                        NppiInterpolationMode mode, cudaStream_t stream)
+void CudaResize::apply(const uint8_t *src, uint8_t *dst,
+                       const std::tuple<int, int, IntConst<3> > &srcShape, const std::tuple<int, int, IntConst<3> > &dstShape,
+                       const std::tuple<int, IntConst<3>, IntConst<1> > &srcStrides, const std::tuple<int, IntConst<3>, IntConst<1> > &dstStrides,
+                       NppiInterpolationMode mode, cudaStream_t stream)
 {
     auto [sh, sw, _1] = srcShape;
     auto [dh, dw, _2] = dstShape;
     NppiRect srcRoi{0, 0, sw, sh}, dstRoi{0, 0, dw, dh};
-    auto &ctx = context();
+    auto &ctx = npp::context();
     ctx.hStream = stream;
 
     cudaCheck(nppiResize_8u_C3R_Ctx(src, get<0>(srcStrides), {sw, sh}, srcRoi,
@@ -126,7 +132,7 @@ auto toCuda(const vector<T> &data, cudaStream_t stream = nullptr)
 }
 
 template<>
-void vt::CudaResize::nppiResizeBatch<uint8_t, 3>(
+void CudaResize::nppiResizeBatch<uint8_t, 3>(
         NppiSize oSmallestSrcSize, NppiRect oSrcRectROI, NppiSize oSmallestDstSize, NppiRect oDstRectROI, NppiInterpolationMode eInterpolation, const vector<NppiResizeBatchCXR> &batchList, NppStreamContext nppStreamCtx)
 {
     auto cudaBatch = toCuda(batchList, nppStreamCtx.hStream);
@@ -136,7 +142,7 @@ void vt::CudaResize::nppiResizeBatch<uint8_t, 3>(
 }
 
 template<>
-void vt::CudaResize::nppiResizeBatchAdvanced<uint8_t, 3>(
+void CudaResize::nppiResizeBatchAdvanced<uint8_t, 3>(
         const NppiSize &maxDst, const vector<NppiImageDescriptor> &pBatchSrc, const vector<NppiImageDescriptor> &pBatchDst, const vector<NppiResizeBatchROI_Advanced> &pBatchROI, NppiInterpolationMode eInterpolation, NppStreamContext nppStreamCtx)
 {
     auto src = toCuda(pBatchSrc, nppStreamCtx.hStream);
@@ -144,7 +150,21 @@ void vt::CudaResize::nppiResizeBatchAdvanced<uint8_t, 3>(
     auto roi = toCuda(pBatchROI, nppStreamCtx.hStream);
     cudaCheck(
         nppiResizeBatch_8u_C3R_Advanced_Ctx(maxDst.width, maxDst.height, src.get(), dst.get(), roi.get(), pBatchSrc.size(), eInterpolation, nppStreamCtx),
-        "nppiResizeBatch_8u_C3R_Advanced_Ctx");
+                "nppiResizeBatch_8u_C3R_Advanced_Ctx");
+}
+
+void CudaWarpAffine::apply(const uint8_t *src, uint8_t *dst, const std::tuple<int, int, IntConst<3> > &srcShape, const std::tuple<int, int, IntConst<3> > &dstShape, const std::tuple<int, IntConst<3>, IntConst<1> > &srcStrides, const std::tuple<int, IntConst<3>, IntConst<1> > &dstStrides, const AffineMatrix &coeffs, NppiInterpolationMode mode, cudaStream_t stream)
+{
+    auto [sh, sw, _1] = srcShape;
+    auto [dh, dw, _2] = dstShape;
+    NppiRect srcRoi{0, 0, sw, sh}, dstRoi{0, 0, dw, dh};
+    auto &ctx = npp::context();
+    ctx.hStream = stream;
+
+    cudaCheck(nppiWarpAffine_8u_C3R_Ctx(src, {sw, sh}, get<0>(srcStrides), srcRoi,
+                                        dst, get<0>(dstStrides), dstRoi,
+                                        reinterpret_cast<const double(*)[3]>(coeffs.data()), mode, ctx),
+              "nppiWarpAffine_8u_C3R_Ctx");
 }
 
 }
