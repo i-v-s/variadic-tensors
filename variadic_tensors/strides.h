@@ -34,7 +34,7 @@ struct ShapeStridesTuple<Axis, Axes...>
                     return pushFront(size, Prev::buildShape(args...));
                 }, forward_as_tuple(args...));
         else
-            return pushFront(Size{}, Prev::buildShape(args...));
+            return pushFront(typename Axis::Size{}, Prev::buildShape(args...));
     }
 
     template<Integer... Args>

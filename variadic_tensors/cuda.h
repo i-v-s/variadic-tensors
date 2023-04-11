@@ -88,15 +88,15 @@ struct CudaResize{
             vector<NppiImageDescriptor> srcDesc(size), dstDesc(size);
             vector<NppiResizeBatchROI_Advanced> roi(size);
             for (int i = 0; i < size; i++) {
-                srcDesc[i] = { const_cast<void *>(src[i].rawPointer()), get<0>(src[i].strides()), srcSizes[i] };
-                dstDesc[i] = { dst[i].rawPointer(), get<0>(dst[i].strides()), dstSizes[i] };
+                srcDesc[i] = { const_cast<uint8_t *>(src[i].data()), get<0>(src[i].strides()), srcSizes[i] };
+                dstDesc[i] = { dst[i].data(), get<0>(dst[i].strides()), dstSizes[i] };
                 roi[i] = { fullRect(srcSizes[i]), fullRect(dstSizes[i]) };
             }
             nppiResizeBatchAdvanced<typename Src::Item, 3>(maxDst, srcDesc, dstDesc, roi, mode, ctx);
         } else {
             vector<NppiResizeBatchCXR> batch(size);
             for (int i = 0; i < size; i++)
-                batch[i] = { src[i].rawPointer(), get<0>(src[i].strides()), dst[i].rawPointer(), get<0>(dst[i].strides()) };
+                batch[i] = { src[i].data(), get<0>(src[i].strides()), dst[i].data(), get<0>(dst[i].strides()) };
             nppiResizeBatch<typename Src::Item, 3>(minSrc, fullRect(minSrc), minDst, fullRect(minDst), mode, batch, ctx);
         }
     }
@@ -137,12 +137,8 @@ struct CudaWarpAffine
             const AffineMatrix &coeffs, NppiInterpolationMode mode = NPPI_INTER_LINEAR, cudaStream_t stream = nullptr);
 
     static void applyBatch(
-            const uint8_t **src, uint8_t **dst,
-            const std::tuple<int, int, IntConst<3>> &dstShape,
-
-            const AffineMatrix *coeffs, NppiInterpolationMode mode = NPPI_INTER_LINEAR, cudaStream_t stream = nullptr
-            );
-
+            const WarpAffineTask<uint8_t> *tasks, const std::tuple<int, int, int, IntConst<3>> &dstShape,
+            NppiInterpolationMode mode = NPPI_INTER_LINEAR, cudaStream_t stream = nullptr);
 };
 
 template<CudaBufferLike Buffer> struct Resize<Buffer> : public CudaResize {};

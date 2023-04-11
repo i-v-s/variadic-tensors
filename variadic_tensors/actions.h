@@ -17,6 +17,16 @@ struct Copy<Src, Dst> : HostCopy {};
 
 using AffineMatrix = std::array<std::array<double, 3>, 2>;
 
+template<typename T>
+struct WarpAffineTask
+{
+    const T *src;
+    int srcStep;
+    T *dst;
+    int dstStep;
+    AffineMatrix matrix;
+};
+
 template<BufferLike Buffer> struct Resize;
 template<BufferLike Buffer> struct WarpAffine;
 template<BufferLike Buffer, typename Other> struct Export;

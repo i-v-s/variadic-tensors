@@ -12,6 +12,12 @@ namespace vt {
 template<typename T>
 concept Integer = std::convertible_to<T, int>;
 
+template<typename T> struct IntTupleT;
+template<typename... T> struct IntTupleT<std::tuple<T...>> { constexpr static bool value = (Integer<T> && ...); };
+
+template<typename T>
+concept IntegerTupleLike = IntTupleT<std::remove_cvref_t<T>>::value;
+
 template<typename T>
 concept Bool = std::convertible_to<T, bool>;
 

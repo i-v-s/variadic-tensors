@@ -34,6 +34,9 @@ struct Shape: public Tuple_
         return *static_cast<const Tuple*>(this);
     }
 
+    operator const Tuple &() const noexcept { return tuple(); }
+    operator Tuple &() noexcept { return tuple(); }
+
     static constexpr std::size_t size() noexcept
     {
         return std::tuple_size_v<Tuple>;

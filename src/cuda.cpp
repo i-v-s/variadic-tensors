@@ -164,7 +164,23 @@ void CudaWarpAffine::apply(const uint8_t *src, uint8_t *dst, const std::tuple<in
     cudaCheck(nppiWarpAffine_8u_C3R_Ctx(src, {sw, sh}, get<0>(srcStrides), srcRoi,
                                         dst, get<0>(dstStrides), dstRoi,
                                         reinterpret_cast<const double(*)[3]>(coeffs.data()), mode, ctx),
-              "nppiWarpAffine_8u_C3R_Ctx");
+            "nppiWarpAffine_8u_C3R_Ctx");
+}
+
+void vt::CudaWarpAffine::applyBatch(const WarpAffineTask<uint8_t> *tasks, const std::tuple<int, int, int, IntConst<3> > &dstShape, NppiInterpolationMode mode, cudaStream_t stream)
+{
+    auto [bs, dh, dw, _] = dstShape;
+    auto &ctx = npp::context();
+    ctx.hStream = stream;
+    vector<NppiWarpAffineBatchCXR> batchList(bs);
+    transform(tasks, tasks + bs, batchList.data(), [] (const auto &task) {
+        return NppiWarpAffineBatchCXR();
+    });
+    auto devBatchList = toCuda(batchList, stream);
+    cudaCheck(nppiWarpAffineBatchInit_Ctx(devBatchList.get(), bs, ctx),
+              "nppiWarpAffineBatchInit_Ctx");
+    cudaCheck(nppiWarpAffineBatch_8u_C3R_Ctx({}/*srcSize*/, {}/*srcRoi*/, {0, 0, dw, dh}, mode, devBatchList.get(), bs, ctx),
+              "nppiWarpAffineBatch_8u_C3R_Ctx");
 }
 
 }
