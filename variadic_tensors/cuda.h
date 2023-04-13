@@ -6,6 +6,20 @@
 
 namespace vt {
 
+namespace npp {
+
+NppiRect fullRect(const NppiSize &size) noexcept;
+NppStreamContext &context();
+
+template<Integer H, Integer W>
+NppiSize nppiSize(const std::tuple<H, W, std::integral_constant<int, 3>> &shape) noexcept
+{
+    using namespace std;
+    return { get<1>(shape), get<0>(shape) };
+}
+
+}
+
 class PinnedBuffer: private Static
 {
 public:
@@ -52,18 +66,18 @@ template<CudaBufferLike Src, HostBufferLike Dst>
 struct Copy<Src, Dst> : public CudaHostCopy {};
 
 struct CudaResize{
-    static NppStreamContext &context();
 
-    static void resize(const uint8_t* src, uint8_t *dst,
+    static void apply(const uint8_t* src, uint8_t *dst,
                        const std::tuple<int, int, IntConst<3>> &srcShape, const std::tuple<int, int, IntConst<3>> &dstShape,
                        const std::tuple<int, IntConst<3>, IntConst<1>> &srcStrides, const std::tuple<int, IntConst<3>, IntConst<1>> &dstStrides,
                        NppiInterpolationMode mode = NPPI_INTER_LINEAR, cudaStream_t stream = nullptr);
 
     template<typename Src, typename Dst>
-    static void resizeBatch(const std::vector<Src> &src, std::vector<Dst> &dst,
+    static void applyBatch(const std::vector<Src> &src, std::vector<Dst> &dst,
                             NppiInterpolationMode mode = NPPI_INTER_LINEAR, cudaStream_t stream = nullptr)
     {
         using namespace std;
+        using namespace npp;
         static_assert(is_same_v<typename Src::Item, typename Dst::Item>);
         size_t size = src.size();
         auto &ctx = context();
@@ -74,40 +88,28 @@ struct CudaResize{
             vector<NppiImageDescriptor> srcDesc(size), dstDesc(size);
             vector<NppiResizeBatchROI_Advanced> roi(size);
             for (int i = 0; i < size; i++) {
-                srcDesc[i] = { const_cast<void *>(src[i].rawPointer()), get<0>(src[i].strides()), srcSizes[i] };
-                dstDesc[i] = { dst[i].rawPointer(), get<0>(dst[i].strides()), dstSizes[i] };
+                srcDesc[i] = { const_cast<uint8_t *>(src[i].data()), get<0>(src[i].strides()), srcSizes[i] };
+                dstDesc[i] = { dst[i].data(), get<0>(dst[i].strides()), dstSizes[i] };
                 roi[i] = { fullRect(srcSizes[i]), fullRect(dstSizes[i]) };
             }
             nppiResizeBatchAdvanced<typename Src::Item, 3>(maxDst, srcDesc, dstDesc, roi, mode, ctx);
         } else {
             vector<NppiResizeBatchCXR> batch(size);
             for (int i = 0; i < size; i++)
-                batch[i] = { src[i].rawPointer(), get<0>(src[i].strides()), dst[i].rawPointer(), get<0>(dst[i].strides()) };
+                batch[i] = { src[i].data(), get<0>(src[i].strides()), dst[i].data(), get<0>(dst[i].strides()) };
             nppiResizeBatch<typename Src::Item, 3>(minSrc, fullRect(minSrc), minDst, fullRect(minDst), mode, batch, ctx);
         }
     }
 
 private:
 
-    template<Integer H, Integer W>
-    static NppiSize nppiSize(const std::tuple<H, W, std::integral_constant<int, 3>> &shape) noexcept
-    {
-        using namespace std;
-        return { get<1>(shape), get<0>(shape) };
-    }
-
-    static NppiRect fullRect(const NppiSize &size) noexcept
-    {
-        return { 0, 0, size.width, size.height };
-    }
-
     template<typename Tensor>
     static bool checkSizes(const std::vector<Tensor> &items, std::vector<NppiSize> &sizes, NppiSize &minSize, NppiSize &maxSize) noexcept
     {
-        minSize = maxSize = nppiSize(items[0].shape());
+        minSize = maxSize = npp::nppiSize(items[0].shape());
         sizes.push_back(minSize);
         for (int i = 1, e = items.size(); i < e; i++) {
-            auto [w, h] = nppiSize(items[i].shape());
+            auto [w, h] = npp::nppiSize(items[i].shape());
             sizes.emplace_back(w, h);
             if (w > maxSize.width) maxSize.width = w;
             if (h > maxSize.height) maxSize.height = h;
@@ -126,8 +128,21 @@ private:
             const NppiSize &maxDst, const std::vector<NppiImageDescriptor> &pBatchSrc, const std::vector<NppiImageDescriptor> &pBatchDst, const std::vector<NppiResizeBatchROI_Advanced> &pBatchROI, NppiInterpolationMode eInterpolation, NppStreamContext nppStreamCtx);
 };
 
-template<CudaBufferLike Buffer>
-struct Resize<Buffer> : public CudaResize {};
+struct CudaWarpAffine
+{
+    static void apply(
+            const uint8_t *src, uint8_t *dst,
+            const std::tuple<int, int, IntConst<3>> &srcShape, const std::tuple<int, int, IntConst<3>> &dstShape,
+            const std::tuple<int, IntConst<3>, IntConst<1>> &srcStrides, const std::tuple<int, IntConst<3>, IntConst<1>> &dstStrides,
+            const AffineMatrix &coeffs, NppiInterpolationMode mode = NPPI_INTER_LINEAR, cudaStream_t stream = nullptr);
+
+    static void applyBatch(
+            const std::tuple<int, int, int, IntConst<3> > &srcShape, const std::tuple<int, int, int, IntConst<3> > &dstShape,
+            const WarpAffineTask<uint8_t> *tasks, const std::vector<AffineMatrix> &matrices, NppiInterpolationMode mode = NPPI_INTER_LINEAR, cudaStream_t stream = nullptr);
+};
+
+template<CudaBufferLike Buffer> struct Resize<Buffer> : public CudaResize {};
+template<CudaBufferLike Buffer> struct WarpAffine<Buffer> : public CudaWarpAffine {};
 
 }
 

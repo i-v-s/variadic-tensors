@@ -80,6 +80,14 @@ public:
     }
 };
 
+template<class T>
+concept TensorLike =
+        requires(T t) {
+            { t.shape().tuple() } -> IntegerTupleLike;
+            { t.strides() } -> IntegerTupleLike;
+            { t.data() } -> std::convertible_to<const void *>;
+        };
+
 template<typename Pointer_, AxisLike... Axes>
 class ConstTensor
 {
@@ -181,7 +189,7 @@ public:
         static_assert(sizeof...(Axes) == 1, "span available only for one dimensional Tensor");
         assert(get<0>(strides_) == 1);
         const auto &size = get<0>(shape_);
-        auto ptr = static_cast<const Item *>(rawPointer());
+        auto ptr = static_cast<const Item *>(data());
         if constexpr(IntConstLike<decltype(size)>)
             return std::span<Item, decltype(size)::value>(ptr);
         else
@@ -199,18 +207,37 @@ public:
     template<typename Other>
     Other as() const
     {
-        return Export<Buffer, Other>::create(static_cast<const Item *>(rawPointer()), shape_.tuple(), strides_);
+        return std::apply([p = data()] (auto... args) {
+            return Export<Buffer, Other>::create(p, args...);
+        }, std::tuple_cat(shape_.tuple(), strides_));
     }
 
-    template<typename Dst, typename... Args>
-    void resizeTo(Dst &result, Args && ... args) const
+    auto asVector(size_t limit = 0) const noexcept
     {
+        using namespace std;
+        vector<decltype((*this)[0])> result;
+        auto size = get<0>(shape_.tuple());
+        assert(limit <= size);
+        for (int i = 0, e = limit || size; i < e; i++) result.push_back((*this)[i]);
+        return result;
+    }
+
+    template<template<typename T> typename Action, TensorLike Dst, typename... Args>
+    void actionTo(Dst &result, Args && ... args) const
+    {
+        using namespace std;
         static_assert(std::is_same_v<Item, typename Dst::Item>, "Tensor item types must be the same");
         static_assert(Buffer::device == Dst::Buffer::device, "Tensors must be on the same device");
-        Resize<GetBuffer<typename Dst::Pointer>>::resize(
-                    static_cast<const Item *>(rawPointer()), static_cast<Item *>(result.rawPointer()),
+        Action<GetBuffer<typename Dst::Pointer>>::apply(
+                    data(), result.data(),
                     shape_, result.shape(), strides_, result.strides(), std::forward<Args>(args)...);
     }
+
+    template<TensorLike Dst, typename... Args>
+    void resizeTo(Dst && dst, Args && ... args) const { actionTo<Resize>(static_cast<Dst&>(dst), std::forward<Args>(args)...); }
+
+    template<TensorLike Dst, typename... Args>
+    void warpAffineTo(Dst && result, const AffineMatrix &coeffs, Args && ... args) const { actionTo<WarpAffine>(static_cast<Dst&>(result), coeffs, std::forward<Args>(args)...); }
 
     template<int... ids, typename... Args>
     auto resize(Args... args) const
@@ -236,7 +263,7 @@ public:
         return result;
     }
 
-    const void *rawPointer() const noexcept { return pointer; }
+    const Item *data() const noexcept { return pointer; }
 
     friend inline std::ostream& operator<<(std::ostream &stream, const ConstTensor &t) noexcept
     {
@@ -369,7 +396,20 @@ public:
     template<typename Other>
     Other as()
     {
-        return Export<Buffer, Other>::create(static_cast<Item *>(rawPointer()), Const::shape_.tuple(), Const::strides_);
+        return std::apply([p = data()] (auto... args) {
+            return Export<Buffer, Other>::create(p, args...);
+        }, std::tuple_cat(Const::shape_.tuple(), Const::strides_));
+    }
+
+    using Const::asVector;
+    auto asVector(size_t limit = 0) noexcept
+    {
+        using namespace std;
+        vector<decltype((*this)[0])> result;
+        auto size = get<0>(Const::shape().tuple());
+        assert(limit <= size);
+        for (int i = 0, e = limit || size; i < e; i++) result.push_back((*this)[i]);
+        return result;
     }
 
     using Const::operator[];
@@ -403,7 +443,7 @@ public:
         static_assert(Const::onHost, "Tensor must be located on host memory");
         static_assert(sizeof...(Axes) == 1, "= available only for one dimensional Tensor");
         assert(items.size() == get<0>(Const::shape_));
-        auto ptr = static_cast<Item *>(rawPointer());
+        auto ptr = data();
         auto stride = get<0>(Const::strides_);
         for (const auto &item: items) {
             *ptr = item;
@@ -421,7 +461,7 @@ public:
         static_assert(sizeof...(Axes) == 1, "span available only for one dimensional Tensor");
         assert(get<0>(Const::strides) == 1);
         const auto &size = get<0>(Const::shape);
-        auto ptr = static_cast<Item *>(rawPointer());
+        auto ptr = data();
         if constexpr(IntConstLike<decltype(size)>)
             return std::span<Item, remove_reference_t<decltype(size)>::value>(ptr, size);
         else
@@ -440,52 +480,90 @@ public:
         auto cs = commonStrides<sizeof(Item)>(make_tuple(BoolConst<Axes::contiguous && OtherAxes::contiguous>() ...), Const::shape().tuple(), other.strides(), Const::strides_);
         size_t size = get<0>(cs);
         apply([this, size, &other] (auto... args) {
-            Copy<GetBuffer<OtherPtr>, GetBuffer<Pointer>>::copy(other.rawPointer(), rawPointer(), size, args...);
+            Copy<GetBuffer<OtherPtr>, GetBuffer<Pointer>>::copy(other.data(), data(), size, args...);
         }, get<1>(cs));
     }
 
-    using Const::rawPointer;
-    void *rawPointer() noexcept { return Const::pointer; }
+    using Const::data;
+    Item *data() noexcept { return Const::pointer; }
 };
 
-template<typename Source, typename Destination, typename... Args>
-void resizeBatch(const std::vector<Source> &sources, std::vector<Destination> &targets, Args... args)
+template<template<typename T> typename Action, TensorLike Source, TensorLike Destination, typename... Args>
+void actionBatch(const std::vector<Source> &sources, std::vector<Destination> & targets, Args... args)
 {
     using namespace std;
     using Buffer = GetBuffer<typename Source::Pointer>;
     static_assert(Buffer::device == Destination::Buffer::device, "Tensors must be on the same device");
     if (sources.size() != targets.size())
-        throw runtime_error("vt::batchResize(): Batches must be the same");
+        throw runtime_error("vt::actionBatch(): Batches must be the same");
     if (sources.empty())
         return;
     if (sources.size() == 1)
-        sources[0].resizeTo(targets[0], forward<Args>(args)...);
+        sources[0].template actionTo<Action>(targets[0], forward<Args>(args)...);
     else
-        Resize<Buffer>::resizeBatch(sources, targets, forward<Args>(args)...);
+        Action<Buffer>::applyBatch(sources, static_cast<std::vector<Destination>&>(targets), forward<Args>(args)...);
 }
 
-template<typename Source, typename Destination, typename... Args>
-void resizeBatch(const std::vector<Source> &sources, Destination &target, Args... args)
+template<template<typename T> typename Action, TensorLike Source, TensorLike Destination, typename... Args>
+void actionBatch(const std::vector<Source> &sources, Destination &target, Args... args)
 {
     using namespace std;
     int dstBatch = get<0>(target.shape());
     if (dstBatch < sources.size())
-        throw runtime_error("vt::batchResize(): Destination batch not enough");
-    vector<decltype(target[0])> targets;
-    for (int i = 0, e = sources.size(); i < e; i++)
-        targets.push_back(target[i]);
-    resizeBatch(sources, targets);
+        throw runtime_error("vt::actionBatch(): Destination batch not enough");
+    auto tv = target.asVector(sources.size());
+    actionBatch<Action>(sources, tv);
+}
+
+template<typename Source, typename Destination, typename... Args>
+void resizeBatch(const Source &source, Destination &dst, Args && ... args)
+{
+    actionBatch<Resize>(source, dst, std::forward<Args>(args)...);
+}
+
+template<typename Source, typename Destination, typename... Args>
+void warpAffineBatch(const std::vector<Source> &sources, Destination &target, const std::vector<AffineMatrix> &matrices, Args... args)
+{
+    using namespace std;
+    using Buffer = GetBuffer<typename Source::Pointer>;
+    using Item = typename Source::Item;
+    static_assert(Buffer::device == Destination::Buffer::device, "Tensors must be on the same device");
+    static_assert(std::is_same_v<Item, typename Destination::Item>, "Tensor item types must be the same");
+    int dstBatch = get<0>(target.shape());
+    int batchSize = sources.size();
+    if (batchSize != matrices.size() || dstBatch < sources.size())
+        throw runtime_error("vt::warpAffineBatch(): Wrong vector sizes");
+    if (!batchSize) return;
+    if (batchSize == 1)
+        sources[0].warpAffineTo(target[0], matrices[0], std::forward<Args>(args)...);
+    else {
+        auto targetShape = pushFront(batchSize, tupleTail(target.shape().tuple()));
+        auto sourceShape = pushFront(batchSize, sources[0].shape().tuple());
+        vector<WarpAffineTask<Item>> tasks(batchSize);
+        auto targetStride = get<1>(target.strides());
+        for (int i = 0, e = batchSize; i < e; i++) {
+            assert(tupleTail(sourceShape) == sources[i].shape().tuple());
+            tasks[i] = {
+                sources[i].data(), get<0>(sources[i].strides()),
+                target[i].data(), targetStride
+            };
+        }
+        WarpAffine<Buffer>::applyBatch(sourceShape, targetShape, tasks.data(), matrices, std::forward<Args>(args)...);
+    }
 }
 
 template<typename Item, typename... Args>
 using PassiveTensor = Tensor<Item *, Args...>;
 
-template<BufferLike Buffer, typename Item, typename... TensorArgs>
-class AllocatedTensor: public Tensor<SharedPointer<Buffer, Item, false>, TensorArgs...>
+template<BufferLike Buffer, typename Item_, typename... TensorArgs>
+class AllocatedTensor: public Tensor<SharedPointer<Buffer, Item_, false>, TensorArgs...>
 {
 public:
-    using Pointer = SharedPointer<Buffer, Item, false>;
+    using Pointer = SharedPointer<Buffer, Item_, false>;
     using Parent = Tensor<Pointer, TensorArgs...>;
+    using ShapeType = typename Parent::ShapeType;
+    using StridesType = typename Parent::StridesType;
+    using Item = typename Parent::Item;
 
     AllocatedTensor() {}
 
