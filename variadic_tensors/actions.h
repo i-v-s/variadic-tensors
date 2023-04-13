@@ -24,7 +24,6 @@ struct WarpAffineTask
     int srcStep;
     T *dst;
     int dstStep;
-    AffineMatrix matrix;
 };
 
 template<BufferLike Buffer> struct Resize;

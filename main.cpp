@@ -75,8 +75,8 @@ int main(int argc, char *argv[])
     auto cropH = cudaCrop.to<vt::HeapBuffer>();
     auto cropRH = cudaR.to<vt::HeapBuffer>();
 
-    cv::Mat cropHM(get<0>(cropH.shape()), get<1>(cropH.shape()), CV_8UC3, cropH.rawPointer());
-    cv::Mat cropRHM(get<0>(cropRH.shape()), get<1>(cropRH.shape()), CV_8UC3, cropRH.rawPointer());
+    cv::Mat cropHM(get<0>(cropH.shape()), get<1>(cropH.shape()), CV_8UC3, cropH.data());
+    cv::Mat cropRHM(get<0>(cropRH.shape()), get<1>(cropRH.shape()), CV_8UC3, cropRH.data());
     cv::imshow("Crop HM", cropHM);
     cv::imshow("Crop RHM", cropRHM);
 

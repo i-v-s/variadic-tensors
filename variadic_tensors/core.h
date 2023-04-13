@@ -207,7 +207,9 @@ public:
     template<typename Other>
     Other as() const
     {
-        return Export<Buffer, Other>::create(static_cast<const Item *>(data()), shape_.tuple(), strides_);
+        return std::apply([p = data()] (auto... args) {
+            return Export<Buffer, Other>::create(p, args...);
+        }, std::tuple_cat(shape_.tuple(), strides_));
     }
 
     auto asVector(size_t limit = 0) const noexcept
@@ -394,7 +396,9 @@ public:
     template<typename Other>
     Other as()
     {
-        return Export<Buffer, Other>::create(data(), Const::shape_.tuple(), Const::strides_);
+        return std::apply([p = data()] (auto... args) {
+            return Export<Buffer, Other>::create(p, args...);
+        }, std::tuple_cat(Const::shape_.tuple(), Const::strides_));
     }
 
     using Const::asVector;
@@ -534,8 +538,17 @@ void warpAffineBatch(const std::vector<Source> &sources, Destination &target, co
         sources[0].warpAffineTo(target[0], matrices[0], std::forward<Args>(args)...);
     else {
         auto targetShape = pushFront(batchSize, tupleTail(target.shape().tuple()));
+        auto sourceShape = pushFront(batchSize, sources[0].shape().tuple());
         vector<WarpAffineTask<Item>> tasks(batchSize);
-        WarpAffine<Buffer>::applyBatch(tasks.data(), targetShape, std::forward<Args>(args)...);
+        auto targetStride = get<1>(target.strides());
+        for (int i = 0, e = batchSize; i < e; i++) {
+            assert(tupleTail(sourceShape) == sources[i].shape().tuple());
+            tasks[i] = {
+                sources[i].data(), get<0>(sources[i].strides()),
+                target[i].data(), targetStride
+            };
+        }
+        WarpAffine<Buffer>::applyBatch(sourceShape, targetShape, tasks.data(), matrices, std::forward<Args>(args)...);
     }
 }
 

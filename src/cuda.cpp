@@ -167,19 +167,23 @@ void CudaWarpAffine::apply(const uint8_t *src, uint8_t *dst, const std::tuple<in
             "nppiWarpAffine_8u_C3R_Ctx");
 }
 
-void vt::CudaWarpAffine::applyBatch(const WarpAffineTask<uint8_t> *tasks, const std::tuple<int, int, int, IntConst<3> > &dstShape, NppiInterpolationMode mode, cudaStream_t stream)
+void vt::CudaWarpAffine::applyBatch(const std::tuple<int, int, int, IntConst<3> > &srcShape, const std::tuple<int, int, int, IntConst<3> > &dstShape, const WarpAffineTask<uint8_t> *tasks, const std::vector<AffineMatrix> &matrices, NppiInterpolationMode mode, cudaStream_t stream)
 {
-    auto [bs, dh, dw, _] = dstShape;
+    auto [dbs, dh, dw, _1] = dstShape;
+    auto [sbs, sh, sw, _2] = srcShape;
+    assert(sbs == dbs);
     auto &ctx = npp::context();
     ctx.hStream = stream;
-    vector<NppiWarpAffineBatchCXR> batchList(bs);
-    transform(tasks, tasks + bs, batchList.data(), [] (const auto &task) {
-        return NppiWarpAffineBatchCXR();
-    });
+    vector<NppiWarpAffineBatchCXR> batchList;
+    auto devMats = toCuda(matrices, stream);
+    for (int i = 0; i < dbs; i++) {
+        const WarpAffineTask<uint8_t> &task = tasks[i];
+        batchList.emplace_back(task.src, task.srcStep, task.dst, task.dstStep, devMats.get()[i][0].data());
+    }
     auto devBatchList = toCuda(batchList, stream);
-    cudaCheck(nppiWarpAffineBatchInit_Ctx(devBatchList.get(), bs, ctx),
+    cudaCheck(nppiWarpAffineBatchInit_Ctx(devBatchList.get(), dbs, ctx),
               "nppiWarpAffineBatchInit_Ctx");
-    cudaCheck(nppiWarpAffineBatch_8u_C3R_Ctx({}/*srcSize*/, {}/*srcRoi*/, {0, 0, dw, dh}, mode, devBatchList.get(), bs, ctx),
+    cudaCheck(nppiWarpAffineBatch_8u_C3R_Ctx({ sw, sh }, { 0, 0, sw, sh }, {0, 0, dw, dh}, mode, devBatchList.get(), dbs, ctx),
               "nppiWarpAffineBatch_8u_C3R_Ctx");
 }
 

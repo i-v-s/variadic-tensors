@@ -24,11 +24,11 @@ template<HostBufferLike Buffer> struct Export<Buffer, cv::Mat>
 {
     template<typename Item, int channels>
     static cv::Mat create(Item *ptr,
-                          const std::tuple<int, int, std::integral_constant<int, channels> > &shape,
-                          const std::tuple<int, std::integral_constant<int, channels>, std::integral_constant<int, 1> > &strides)
+                          int height, int width, std::integral_constant<int, channels> colors,
+                          int step, std::integral_constant<int, channels>, std::integral_constant<int, 1>)
     {
         static_assert(channels >= 1 && channels <= 4, "Wrong channel number");
-        return cv::Mat(get<0>(shape), get<1>(shape), cvType<Item, channels>, ptr, get<0>(strides));
+        return cv::Mat(height, width, cvType<Item, channels>, ptr, step);
     }
 };
 

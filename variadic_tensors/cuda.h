@@ -137,8 +137,8 @@ struct CudaWarpAffine
             const AffineMatrix &coeffs, NppiInterpolationMode mode = NPPI_INTER_LINEAR, cudaStream_t stream = nullptr);
 
     static void applyBatch(
-            const WarpAffineTask<uint8_t> *tasks, const std::tuple<int, int, int, IntConst<3>> &dstShape,
-            NppiInterpolationMode mode = NPPI_INTER_LINEAR, cudaStream_t stream = nullptr);
+            const std::tuple<int, int, int, IntConst<3> > &srcShape, const std::tuple<int, int, int, IntConst<3> > &dstShape,
+            const WarpAffineTask<uint8_t> *tasks, const std::vector<AffineMatrix> &matrices, NppiInterpolationMode mode = NPPI_INTER_LINEAR, cudaStream_t stream = nullptr);
 };
 
 template<CudaBufferLike Buffer> struct Resize<Buffer> : public CudaResize {};
