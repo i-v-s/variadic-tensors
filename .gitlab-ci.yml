@@ -1,0 +1,29 @@
+image: nvidia/cuda:12.1.1-devel-ubuntu22.04
+
+stages:          # List of stages for jobs, and their order of execution
+  - build
+
+before_script:
+ - export TZ=Etc/UTC
+ - ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
+ - apt-get update --yes
+ - apt-get install --yes g++-12 cmake libopencv-dev
+ - apt-get install --yes libavformat-dev libavfilter-dev libavcodec-dev libswresample-dev libswscale-dev libavutil-dev
+
+linux-build:
+  stage: build
+  tags: [docker]
+  script:
+    - mkdir build
+    - cd build
+    - echo "Configuring build..."
+    - cmake -DCMAKE_CXX_COMPILER=/usr/bin/g++-12 -DWITH_OPENCV=ON -DWITH_FFMPEG=ON ..
+    - echo "Compiling the code..."
+    - make
+    - echo "Compilation successful."
+    - echo "Making package..."
+    - make package
+    - echo "Package ready."
+  artifacts:
+    paths:
+      - build/variadic-tensors-*.deb
