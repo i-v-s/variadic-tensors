@@ -88,6 +88,17 @@ concept TensorLike =
             { t.data() } -> std::convertible_to<const void *>;
         };
 
+
+template<TensorLike Source, TensorLike Target>
+void toVector(std::vector<Target> &result, Source &source, size_t limit = 0) noexcept
+{
+    using namespace std;
+    auto size = get<0>(source.shape().tuple());
+    assert(limit <= size);
+    for (size_t i = 0, e = limit ? limit : size; i < e; i++)
+        result.push_back(source[i]);
+}
+
 template<typename Pointer_, AxisLike... Axes>
 class ConstTensor
 {
@@ -214,11 +225,8 @@ public:
 
     auto asVector(size_t limit = 0) const noexcept
     {
-        using namespace std;
-        vector<decltype((*this)[0])> result;
-        auto size = get<0>(shape_.tuple());
-        assert(limit <= size);
-        for (int i = 0, e = limit || size; i < e; i++) result.push_back((*this)[i]);
+        std::vector<decltype((*this)[0])> result;
+        toVector(result, *this, limit);
         return result;
     }
 
@@ -404,11 +412,8 @@ public:
     using Const::asVector;
     auto asVector(size_t limit = 0) noexcept
     {
-        using namespace std;
-        vector<decltype((*this)[0])> result;
-        auto size = get<0>(Const::shape().tuple());
-        assert(limit <= size);
-        for (int i = 0, e = limit || size; i < e; i++) result.push_back((*this)[i]);
+        std::vector<decltype((*this)[0])> result;
+        toVector(result, *this, limit);
         return result;
     }
 

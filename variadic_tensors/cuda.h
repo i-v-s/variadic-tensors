@@ -84,7 +84,14 @@ struct CudaResize{
         ctx.hStream = stream;
         NppiSize minSrc, maxSrc, minDst, maxDst;
         vector<NppiSize> srcSizes, dstSizes;
-        if (checkSizes(src, srcSizes, minSrc, maxSrc) || checkSizes(dst, dstSizes, minDst, maxDst)) {
+        bool se = checkSizes(src, srcSizes, minSrc, maxSrc),
+             de = checkSizes(dst, dstSizes, minDst, maxDst);
+        if (se && de) {
+            vector<NppiResizeBatchCXR> batch(size);
+            for (int i = 0; i < size; i++)
+                batch[i] = { src[i].data(), get<0>(src[i].strides()), dst[i].data(), get<0>(dst[i].strides()) };
+            nppiResizeBatch<typename Src::Item, 3>(minSrc, fullRect(minSrc), minDst, fullRect(minDst), mode, batch, ctx);
+        } else {
             vector<NppiImageDescriptor> srcDesc(size), dstDesc(size);
             vector<NppiResizeBatchROI_Advanced> roi(size);
             for (int i = 0; i < size; i++) {
@@ -93,16 +100,18 @@ struct CudaResize{
                 roi[i] = { fullRect(srcSizes[i]), fullRect(dstSizes[i]) };
             }
             nppiResizeBatchAdvanced<typename Src::Item, 3>(maxDst, srcDesc, dstDesc, roi, mode, ctx);
-        } else {
-            vector<NppiResizeBatchCXR> batch(size);
-            for (int i = 0; i < size; i++)
-                batch[i] = { src[i].data(), get<0>(src[i].strides()), dst[i].data(), get<0>(dst[i].strides()) };
-            nppiResizeBatch<typename Src::Item, 3>(minSrc, fullRect(minSrc), minDst, fullRect(minDst), mode, batch, ctx);
         }
     }
 
 private:
-
+    /**
+     * @brief checkSizes function that check sizes, finds minimal, maximal and fills sizes
+     * @param items source tensors
+     * @param sizes vector of sizes to fill
+     * @param minSize
+     * @param maxSize
+     * @return true if item sizes are the same
+     */
     template<typename Tensor>
     static bool checkSizes(const std::vector<Tensor> &items, std::vector<NppiSize> &sizes, NppiSize &minSize, NppiSize &maxSize) noexcept
     {
@@ -116,7 +125,7 @@ private:
             if (w < minSize.width) minSize.width = w;
             if (h < minSize.height) minSize.height = h;
         }
-        return (minSize.width != maxSize.width || minSize.height != maxSize.height);
+        return minSize.width == maxSize.width && minSize.height == maxSize.height;
     }
 
     template<typename P, uint C>
