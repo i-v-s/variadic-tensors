@@ -560,6 +560,9 @@ void warpAffineBatch(const std::vector<Source> &sources, Destination &target, co
 template<typename Item, typename... Args>
 using PassiveTensor = Tensor<Item *, Args...>;
 
+template<BufferLike Buffer, typename Item_, typename... Args>
+using CroppedTensor = Tensor<SharedPointer<Buffer, Item_, true>, Args...>;
+
 template<BufferLike Buffer, typename Item_, typename... TensorArgs>
 class AllocatedTensor: public Tensor<SharedPointer<Buffer, Item_, false>, TensorArgs...>
 {
